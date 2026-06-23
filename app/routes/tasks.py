@@ -2,10 +2,32 @@ import json
 import asyncio
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
+from typing import List
 
+from app.models.schemas import PublishJobResponse
 from app.services.task_manager import task_manager
 
 router = APIRouter()
+
+
+@router.get("/tasks", response_model=List[PublishJobResponse])
+def list_tasks(status: str = None, limit: int = 100):
+    """
+    Lista publicações persistidas no SQLite.
+    """
+    return task_manager.list_jobs(status=status, limit=limit)
+
+
+@router.get("/tasks/{task_id}", response_model=PublishJobResponse)
+def get_task(task_id: str):
+    """
+    Retorna uma publicação persistida, incluindo status por plataforma.
+    """
+    job = task_manager.get_job(task_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Task ID não encontrado.")
+    return job
+
 
 @router.get("/tasks/{task_id}/stream")
 async def stream_task(task_id: str):

@@ -1,5 +1,6 @@
 import os
 from uuid import uuid4
+from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -13,7 +14,21 @@ router = APIRouter()
 SUPPORTED_PLATFORMS = {"youtube", "instagram", "tiktok"}
 
 
+def _to_utc_naive(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
 def _validate_publish_request(request: PublishRequest, db: Session):
+    if request.mode == "scheduled" and request.scheduled_at is None:
+        raise HTTPException(
+            status_code=400,
+            detail="scheduled_at é obrigatório quando mode='scheduled'.",
+        )
+
     if not os.path.isfile(request.video_path):
         raise HTTPException(
             status_code=400,
@@ -84,13 +99,26 @@ async def publish_omnichannel(
 
     # Registra a task no gerenciador de estados, criando chaves por plataforma
     platforms = list(request.accounts.keys())
-    task_manager.create_task(task_id, platforms)
+    task_manager.create_task(
+        task_id,
+        platforms,
+        request=request,
+        mode=request.mode,
+        status="queued",
+    )
 
-    # Adiciona a função execute do orquestrador no background
-    background_tasks.add_task(orchestrator.execute, task_id, request)
+    if request.mode == "immediate":
+        background_tasks.add_task(orchestrator.execute, task_id, request)
+        message = "Upload iniciado. Acompanhe pelo endpoint SSE."
+        response_status = "accepted"
+    else:
+        message = "Upload agendado. O scheduler interno disparará a publicação no horário configurado."
+        response_status = "queued"
 
     return PublishResponse(
         task_id=task_id, 
-        status="accepted", 
-        message="Upload iniciado. Acompanhe pelo endpoint SSE."
+        status=response_status,
+        message=message,
+        mode=request.mode,
+        scheduled_at=_to_utc_naive(request.scheduled_at),
     )

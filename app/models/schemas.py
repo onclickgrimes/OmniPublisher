@@ -5,6 +5,8 @@ from datetime import datetime
 
 
 PlatformName = Literal["youtube", "instagram", "tiktok"]
+PublishMode = Literal["immediate", "scheduled"]
+JobStatus = Literal["queued", "running", "success", "error", "canceled"]
 
 # --- Pydantic Models para Accounts ---
 
@@ -68,6 +70,17 @@ class AccountResponse(BaseModel):
 # --- Pydantic Models para Publicação ---
 
 class PublishRequest(BaseModel):
+    mode: PublishMode = Field(
+        "immediate",
+        description="Use 'immediate' para publicar agora ou 'scheduled' para agendar.",
+    )
+    scheduled_at: Optional[datetime] = Field(
+        None,
+        description=(
+            "Data/hora ISO 8601 para publicações agendadas. Obrigatório quando mode='scheduled'. "
+            "Prefira enviar timezone explícito, por exemplo 2026-06-24T14:00:00-03:00."
+        ),
+    )
     video_path: str = Field(..., description="Caminho absoluto do arquivo de vídeo")
     caption: str = Field(..., description="Legenda do vídeo")
     
@@ -89,6 +102,7 @@ class PublishRequest(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
+                "mode": "immediate",
                 "video_path": "C:/Projetos-NestJS/OmniPublisher/1-1.mp4",
                 "caption": "Publicacao via OmniPublisher! #ola",
                 "accounts": {
@@ -116,3 +130,35 @@ class PublishResponse(BaseModel):
     task_id: str
     status: str
     message: str
+    mode: Optional[PublishMode] = None
+    scheduled_at: Optional[datetime] = None
+
+
+class PublishPlatformStatusResponse(BaseModel):
+    platform: str
+    account_id: str
+    status: str
+    progress: int
+    error: Optional[str] = None
+    updated_at: datetime
+
+
+class PublishJobResponse(BaseModel):
+    id: str
+    task_id: str
+    mode: str
+    status: str
+    video_path: str
+    caption: str
+    accounts: Dict[str, str]
+    youtube_title: Optional[str] = None
+    youtube_tags: Optional[List[str]] = None
+    youtube_privacy: str
+    instagram_format: str
+    scheduled_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    error: Optional[str] = None
+    platforms: List[PublishPlatformStatusResponse] = Field(default_factory=list)

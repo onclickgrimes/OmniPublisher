@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.routes import publish, tasks, accounts
 from app.services.session_manager import session_manager
+from app.services.scheduler import scheduler
 from app.models.db import engine, Base
 from app.config import (
     APP_NAME,
@@ -14,6 +15,7 @@ from app.config import (
     OMNIPUBLISHER_HOST,
     OMNIPUBLISHER_PORT,
     OMNIPUBLISHER_PUBLIC_BASE_URL,
+    SCHEDULER_INTERVAL_SECONDS,
     SESSIONS_DIR,
     YOUTUBE_CLIENT_SECRETS_FILE,
     YOUTUBE_OAUTH_PORT,
@@ -47,7 +49,16 @@ async def startup_event():
     """
     Executado ao iniciar a aplicação.
     """
+    await scheduler.start()
     print(f"{APP_NAME} iniciado com sucesso!")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """
+    Executado ao encerrar a aplicação.
+    """
+    await scheduler.stop()
 
 
 @app.get("/health")
@@ -80,6 +91,7 @@ def runtime():
         "sessionsDir": str(SESSIONS_DIR),
         "youtubeClientSecretsFile": str(YOUTUBE_CLIENT_SECRETS_FILE),
         "youtubeOauthPort": YOUTUBE_OAUTH_PORT,
+        "schedulerIntervalSeconds": SCHEDULER_INTERVAL_SECONDS,
     }
 
 @app.get("/")

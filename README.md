@@ -68,6 +68,7 @@ OMNIPUBLISHER_DATA_DIR=C:/Users/seu_usuario/AppData/Roaming/SeuApp/omnipublisher
 OMNIPUBLISHER_DB_PATH=C:/Users/seu_usuario/AppData/Roaming/SeuApp/omnipublisher/omnipublisher.db
 OMNIPUBLISHER_SESSIONS_DIR=C:/Users/seu_usuario/AppData/Roaming/SeuApp/omnipublisher/sessions
 YOUTUBE_OAUTH_PORT=8080
+SCHEDULER_INTERVAL_SECONDS=30
 ```
 
 Se `OMNIPUBLISHER_DATA_DIR` não for definido, o comportamento de dev é preservado:
@@ -130,7 +131,7 @@ Também é possível gerenciar contas com:
 
 As respostas de contas nunca retornam `credentials`.
 
-### 2. Iniciar um Upload (POST `/publish/omnichannel`)
+### 2. Iniciar ou Agendar um Upload (POST `/publish/omnichannel`)
 
 Envia a requisição para postar o vídeo. O servidor responde imediatamente com um `task_id`.
 Não envie senha, cookie ou session ID neste endpoint. Envie apenas o ID da conta
@@ -138,9 +139,10 @@ previamente cadastrada via `POST /accounts/`.
 O servidor valida antes de criar a task se o arquivo existe, se a conta existe e se
 a conta pertence à plataforma informada.
 
-**Exemplo de Requisição (JSON):**
+**Exemplo de publicação imediata:**
 ```json
 {
+  "mode": "immediate",
   "video_path": "C:/Caminho/Absoluto/Para/Seu/Video.mp4",
   "caption": "Este é um teste incrível do OmniPublisher! #teste #viral",
   "accounts": {
@@ -154,6 +156,23 @@ a conta pertence à plataforma informada.
   "instagram_format": "reels"
 }
 ```
+
+**Exemplo de publicação agendada:**
+```json
+{
+  "mode": "scheduled",
+  "scheduled_at": "2026-06-24T14:00:00-03:00",
+  "video_path": "C:/Caminho/Absoluto/Para/Seu/Video.mp4",
+  "caption": "Post agendado pelo OmniPublisher! #teste",
+  "accounts": {
+    "tiktok": "a1f4f6fd-0974-4556-b88d-b2327a478170"
+  }
+}
+```
+
+Quando `mode` é `scheduled`, o job fica persistido no SQLite com status `queued`.
+O worker interno varre o banco a cada `SCHEDULER_INTERVAL_SECONDS` e dispara jobs
+com `scheduled_at <= now`.
 
 **Exemplo de Resposta (200 OK):**
 ```json
@@ -169,7 +188,22 @@ a conta pertence à plataforma informada.
 > - **Instagram**: A senha é informada no cadastro da conta. No primeiro uso, o sistema faz login e salva a sessão em `sessions/`.
 > - **YouTube**: No primeiro uso, o navegador abrirá na porta `YOUTUBE_OAUTH_PORT` (`8080` por padrão) para autorizar a conta. Depois o token fica salvo em `sessions/`.
 
-### 3. Monitoramento em Tempo Real (GET `/tasks/{task_id}/stream`)
+### 3. Consultar e Monitorar Publicações
+
+As publicações ficam persistidas no SQLite.
+
+- `GET /tasks`: lista publicações persistidas.
+- `GET /tasks?status=queued`: lista publicações por status.
+- `GET /tasks/{task_id}`: retorna detalhes e status por plataforma.
+- `GET /tasks/{task_id}/stream`: acompanha atualizações via SSE.
+
+Status principais:
+
+- `queued`: aguardando execução ou horário agendado.
+- `running`: publicação em andamento.
+- `success`: todas as plataformas concluíram com sucesso.
+- `error`: pelo menos uma plataforma falhou.
+- `canceled`: reservado para cancelamento futuro.
 
 Para não precisar fazer *polling*, o backend usa SSE (Server-Sent Events).
 
