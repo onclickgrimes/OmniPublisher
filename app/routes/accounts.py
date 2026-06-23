@@ -3,8 +3,9 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from app.config import SESSIONS_DIR
-from app.models.db import Account, get_db
-from app.models.schemas import AccountCreate, AccountResponse, AccountUpdate
+from app.models.db import Account, AccountStatusCheck, Workspace, WorkspaceAccount, get_db
+from app.models.schemas import AccountCreate, AccountResponse, AccountStatusResponse, AccountUpdate
+from app.services.account_status_checker import account_status_checker
 
 router = APIRouter()
 
@@ -76,12 +77,22 @@ def create_account(account: AccountCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/", response_model=List[AccountResponse])
-def list_accounts(platform: str = None, db: Session = Depends(get_db)):
+def list_accounts(
+    platform: str = None,
+    workspace_id: str = None,
+    db: Session = Depends(get_db),
+):
     """
-    Lista as contas cadastradas. Pode filtrar por plataforma.
+    Lista as contas cadastradas. Pode filtrar por plataforma e/ou workspace.
     A senha (credentials) não é retornada por segurança (definido no AccountResponse).
     """
     query = db.query(Account)
+    if workspace_id:
+        workspace = db.query(Workspace).filter(Workspace.id == workspace_id).first()
+        if not workspace:
+            raise HTTPException(status_code=404, detail="Workspace não encontrado.")
+        query = query.join(WorkspaceAccount, WorkspaceAccount.account_id == Account.id)
+        query = query.filter(WorkspaceAccount.workspace_id == workspace_id)
     if platform:
         query = query.filter(Account.platform == platform)
     return query.all()
@@ -93,6 +104,17 @@ def get_account(account_id: str, db: Session = Depends(get_db)):
     Retorna uma conta cadastrada sem expor credenciais.
     """
     return _get_account_or_404(account_id, db)
+
+
+@router.get("/{account_id}/status", response_model=AccountStatusResponse)
+def get_account_status(account_id: str, refresh: bool = False):
+    """
+    Retorna o status de autenticação da conta, usando cache quando possível.
+    """
+    status = account_status_checker.check_account_status(account_id, refresh=refresh)
+    if not status:
+        raise HTTPException(status_code=404, detail="Conta não encontrada.")
+    return status
 
 
 @router.patch("/{account_id}", response_model=AccountResponse)
@@ -122,6 +144,8 @@ def delete_account(account_id: str, db: Session = Depends(get_db)):
     """
     db_account = _get_account_or_404(account_id, db)
     _delete_settings_file(db_account)
+    db.query(WorkspaceAccount).filter(WorkspaceAccount.account_id == account_id).delete()
+    db.query(AccountStatusCheck).filter(AccountStatusCheck.account_id == account_id).delete()
     db.delete(db_account)
     db.commit()
     return {

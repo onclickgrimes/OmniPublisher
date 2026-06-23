@@ -1,6 +1,6 @@
 import uuid
 # pyrefly: ignore [missing-import]
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, create_engine
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine
 # pyrefly: ignore [missing-import]
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime
@@ -31,6 +31,53 @@ class Account(Base):
     settings_file = Column(String, nullable=True)         # Nome do arquivo de sessão (ex: instagram_settings_ID.json)
 
 
+class Workspace(Base):
+    """
+    Agrupa contas e publicações por contexto de trabalho/projeto.
+    """
+    __tablename__ = "workspaces"
+    __table_args__ = (UniqueConstraint("slug", name="uq_workspaces_slug"),)
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    name = Column(String, nullable=False)
+    slug = Column(String, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class WorkspaceAccount(Base):
+    """
+    Associação N:N entre workspaces e contas.
+    """
+    __tablename__ = "workspace_accounts"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "account_id", name="uq_workspace_accounts_pair"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id"), index=True, nullable=False)
+    account_id = Column(String(36), ForeignKey("accounts.id"), index=True, nullable=False)
+    label = Column(String, nullable=True)
+    is_default = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+
+class AccountStatusCheck(Base):
+    """
+    Cache histórico de verificações de autenticação das contas.
+    """
+    __tablename__ = "account_status_checks"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    account_id = Column(String(36), ForeignKey("accounts.id"), index=True, nullable=False)
+    status = Column(String, index=True, nullable=False)
+    message = Column(Text, nullable=True)
+    checked_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    raw_json = Column(Text, nullable=True)
+
+
 class PublishJob(Base):
     """
     Representa uma publicação imediata ou agendada.
@@ -38,6 +85,7 @@ class PublishJob(Base):
     __tablename__ = "publish_jobs"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    workspace_id = Column(String(36), index=True, nullable=True)
     mode = Column(String, index=True, nullable=False, default="immediate")
     status = Column(String, index=True, nullable=False, default="queued")
     video_path = Column(Text, nullable=False)
@@ -104,3 +152,6 @@ def ensure_database_schema():
         }
         if "thumb_path" not in publish_job_columns:
             conn.exec_driver_sql("ALTER TABLE publish_jobs ADD COLUMN thumb_path TEXT")
+        if "workspace_id" not in publish_job_columns:
+            conn.exec_driver_sql("ALTER TABLE publish_jobs ADD COLUMN workspace_id VARCHAR(36)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_publish_jobs_workspace_id ON publish_jobs (workspace_id)")

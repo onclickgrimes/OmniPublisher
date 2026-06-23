@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.models.db import Account, get_db
+from app.models.db import Account, Workspace, WorkspaceAccount, get_db
 from app.models.schemas import PublishRequest, PublishResponse
 from app.services.task_manager import task_manager
 from app.services.orchestrator import orchestrator
@@ -49,6 +49,17 @@ def _validate_publish_request(request: PublishRequest, db: Session):
             detail="Pelo menos uma conta deve ser informada no mapeamento 'accounts'.",
         )
 
+    if request.workspace_id is not None:
+        request.workspace_id = request.workspace_id.strip() or None
+
+    if request.workspace_id:
+        workspace = db.query(Workspace).filter(Workspace.id == request.workspace_id).first()
+        if not workspace:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Workspace '{request.workspace_id}' não encontrado.",
+            )
+
     normalized_accounts: dict[str, str] = {}
     for raw_platform, raw_account_id in request.accounts.items():
         platform = str(raw_platform or "").strip().lower()
@@ -87,6 +98,22 @@ def _validate_publish_request(request: PublishRequest, db: Session):
                     f"mas foi enviada para '{platform}'."
                 ),
             )
+
+        if request.workspace_id:
+            linked = (
+                db.query(WorkspaceAccount)
+                .filter(WorkspaceAccount.workspace_id == request.workspace_id)
+                .filter(WorkspaceAccount.account_id == account_id)
+                .first()
+            )
+            if not linked:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Conta '{account_id}' não está vinculada ao workspace "
+                        f"'{request.workspace_id}'."
+                    ),
+                )
 
         normalized_accounts[platform] = account_id
 
@@ -127,6 +154,7 @@ async def publish_omnichannel(
         task_id=task_id, 
         status=response_status,
         message=message,
+        workspace_id=request.workspace_id,
         mode=request.mode,
         scheduled_at=_to_utc_naive(request.scheduled_at),
     )

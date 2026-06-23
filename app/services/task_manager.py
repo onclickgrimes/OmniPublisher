@@ -220,12 +220,20 @@ class TaskManager:
         finally:
             db.close()
 
-    def list_jobs(self, *, status: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+    def list_jobs(
+        self,
+        *,
+        status: str | None = None,
+        workspace_id: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
         db = SessionLocal()
         try:
             query = db.query(PublishJob)
             if status:
                 query = query.filter(PublishJob.status == status)
+            if workspace_id:
+                query = query.filter(PublishJob.workspace_id == workspace_id)
             jobs = query.order_by(PublishJob.created_at.desc()).limit(max(1, min(limit, 500))).all()
             return [self._job_to_dict(db, job) for job in jobs]
         finally:
@@ -520,6 +528,7 @@ class TaskManager:
                 db.add(job)
 
             job.mode = mode
+            job.workspace_id = request.workspace_id
             job.status = status
             job.video_path = request.video_path
             job.thumb_path = request.thumb_path
@@ -670,6 +679,7 @@ class TaskManager:
     def _request_from_job(self, job: PublishJob) -> PublishRequest:
         return PublishRequest(
             mode=job.mode,
+            workspace_id=job.workspace_id,
             scheduled_at=job.scheduled_at,
             video_path=job.video_path,
             thumb_path=job.thumb_path,
@@ -697,6 +707,7 @@ class TaskManager:
         payload = {
             "id": job.id,
             "task_id": job.id,
+            "workspace_id": job.workspace_id,
             "mode": job.mode,
             "status": job.status,
             "video_path": job.video_path,

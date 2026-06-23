@@ -3,7 +3,7 @@ from fastapi import FastAPI
 # pyrefly: ignore [missing-import]
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routes import publish, tasks, accounts
+from app.routes import publish, tasks, accounts, workspaces
 from app.services.session_manager import session_manager
 from app.services.scheduler import scheduler
 from app.services.task_manager import task_manager
@@ -11,6 +11,7 @@ from app.models.db import engine, Base, ensure_database_schema
 from app.config import (
     APP_NAME,
     APP_VERSION,
+    ACCOUNT_STATUS_CACHE_TTL_SECONDS,
     DATA_DIR,
     DATABASE_PATH,
     OMNIPUBLISHER_HOST,
@@ -46,6 +47,7 @@ app.add_middleware(
 app.include_router(publish.router, tags=["Publish"])
 app.include_router(tasks.router, tags=["Tasks"])
 app.include_router(accounts.router, prefix="/accounts", tags=["Accounts"])
+app.include_router(workspaces.router, tags=["Workspaces"])
 
 @app.on_event("startup")
 async def startup_event():
@@ -99,6 +101,7 @@ def runtime():
         "youtubeOauthPort": YOUTUBE_OAUTH_PORT,
         "schedulerIntervalSeconds": SCHEDULER_INTERVAL_SECONDS,
         "runningJobStaleMinutes": RUNNING_JOB_STALE_MINUTES,
+        "accountStatusCacheTtlSeconds": ACCOUNT_STATUS_CACHE_TTL_SECONDS,
     }
 
 @app.get("/")

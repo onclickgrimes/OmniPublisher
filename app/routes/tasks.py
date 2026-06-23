@@ -11,11 +11,11 @@ router = APIRouter()
 
 
 @router.get("/tasks", response_model=List[PublishJobResponse])
-def list_tasks(status: str = None, limit: int = 100):
+def list_tasks(status: str = None, workspace_id: str = None, limit: int = 100):
     """
     Lista publicações persistidas no SQLite.
     """
-    return task_manager.list_jobs(status=status, limit=limit)
+    return task_manager.list_jobs(status=status, workspace_id=workspace_id, limit=limit)
 
 
 @router.get("/tasks/{task_id}", response_model=PublishJobResponse)

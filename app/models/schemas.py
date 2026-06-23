@@ -7,6 +7,7 @@ from datetime import datetime
 PlatformName = Literal["youtube", "instagram", "tiktok"]
 PublishMode = Literal["immediate", "scheduled"]
 JobStatus = Literal["queued", "running", "success", "error", "canceled"]
+AccountConnectionStatus = Literal["connected", "disconnected", "needs_auth", "error", "unknown"]
 
 # --- Pydantic Models para Accounts ---
 
@@ -67,9 +68,83 @@ class AccountResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+class AccountStatusResponse(BaseModel):
+    account_id: str
+    platform: str
+    name: str
+    identifier: str
+    status: AccountConnectionStatus
+    message: Optional[str] = None
+    checked_at: datetime
+    expires_at: datetime
+    cached: bool = False
+
+
+# --- Pydantic Models para Workspaces ---
+
+class WorkspaceCreate(BaseModel):
+    name: str = Field(..., min_length=1, description="Nome do workspace.")
+    slug: Optional[str] = Field(None, min_length=1, description="Identificador legível opcional.")
+    description: Optional[str] = Field(None, description="Descrição opcional do workspace.")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "name": "Histórias da Bíblia",
+                "slug": "historias-da-biblia",
+                "description": "Workspace de conteúdo bíblico.",
+            }
+        }
+
+
+class WorkspaceUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, description="Novo nome do workspace.")
+    slug: Optional[str] = Field(None, min_length=1, description="Novo identificador legível.")
+    description: Optional[str] = Field(None, description="Nova descrição opcional.")
+
+
+class WorkspaceResponse(BaseModel):
+    id: str
+    name: str
+    slug: str
+    description: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class WorkspaceAccountAttach(BaseModel):
+    account_id: str = Field(..., description="ID da conta global a vincular ao workspace.")
+    label: Optional[str] = Field(None, description="Rótulo opcional da conta neste workspace.")
+    is_default: bool = Field(False, description="Marca a conta como padrão dentro do workspace.")
+
+
+class WorkspaceAccountResponse(BaseModel):
+    id: str
+    workspace_id: str
+    account_id: str
+    platform: str
+    name: str
+    identifier: str
+    label: Optional[str] = None
+    is_default: bool
+    created_at: datetime
+
+
+class WorkspaceAccountsStatusResponse(BaseModel):
+    workspace_id: str
+    accounts: List[AccountStatusResponse] = Field(default_factory=list)
+
 # --- Pydantic Models para Publicação ---
 
 class PublishRequest(BaseModel):
+    workspace_id: Optional[str] = Field(
+        None,
+        description="Workspace opcional que escopa a publicação e valida as contas usadas.",
+    )
     mode: PublishMode = Field(
         "immediate",
         description="Use 'immediate' para publicar agora ou 'scheduled' para agendar.",
@@ -106,6 +181,7 @@ class PublishRequest(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
+                "workspace_id": "uuid-do-workspace",
                 "mode": "immediate",
                 "video_path": "C:/Projetos-NestJS/OmniPublisher/1-1.mp4",
                 "thumb_path": "C:/Projetos-NestJS/OmniPublisher/1-1.mp4.jpg",
@@ -135,6 +211,7 @@ class PublishResponse(BaseModel):
     task_id: str
     status: str
     message: str
+    workspace_id: Optional[str] = None
     mode: Optional[PublishMode] = None
     scheduled_at: Optional[datetime] = None
 
@@ -160,6 +237,7 @@ class PublishJobEventResponse(BaseModel):
 class PublishJobResponse(BaseModel):
     id: str
     task_id: str
+    workspace_id: Optional[str] = None
     mode: str
     status: str
     video_path: str

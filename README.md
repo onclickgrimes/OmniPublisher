@@ -70,6 +70,7 @@ OMNIPUBLISHER_SESSIONS_DIR=C:/Users/seu_usuario/AppData/Roaming/SeuApp/omnipubli
 YOUTUBE_OAUTH_PORT=8080
 SCHEDULER_INTERVAL_SECONDS=30
 RUNNING_JOB_STALE_MINUTES=30
+ACCOUNT_STATUS_CACHE_TTL_SECONDS=600
 ```
 
 Se `OMNIPUBLISHER_DATA_DIR` não for definido, o comportamento de dev é preservado:
@@ -132,7 +133,55 @@ Também é possível gerenciar contas com:
 
 As respostas de contas nunca retornam `credentials`.
 
-### 2. Iniciar ou Agendar um Upload (POST `/publish/omnichannel`)
+### 2. Workspaces e Contas
+
+Workspaces agrupam contas por projeto/contexto. As contas continuam globais e podem
+estar em vários workspaces ou em nenhum.
+
+Endpoints:
+
+- `GET /workspaces`: lista workspaces.
+- `POST /workspaces`: cria um workspace.
+- `GET /workspaces/{workspace_id}`: consulta um workspace.
+- `PATCH /workspaces/{workspace_id}`: atualiza nome, slug ou descrição.
+- `DELETE /workspaces/{workspace_id}`: remove o workspace sem apagar contas.
+- `GET /workspaces/{workspace_id}/accounts`: lista contas vinculadas.
+- `POST /workspaces/{workspace_id}/accounts`: vincula uma conta global ao workspace.
+- `DELETE /workspaces/{workspace_id}/accounts/{account_id}`: remove o vínculo.
+- `GET /accounts?workspace_id=...`: lista contas filtradas por workspace.
+
+Exemplo para criar workspace:
+
+```json
+{
+  "name": "Histórias da Bíblia",
+  "slug": "historias-da-biblia",
+  "description": "Workspace de conteúdo bíblico."
+}
+```
+
+Exemplo para vincular conta:
+
+```json
+{
+  "account_id": "a1f4f6fd-0974-4556-b88d-b2327a478170",
+  "label": "TikTok Principal",
+  "is_default": true
+}
+```
+
+Status de autenticação das contas:
+
+- `GET /accounts/{account_id}/status`: status individual.
+- `GET /accounts/{account_id}/status?refresh=true`: força nova verificação.
+- `GET /workspaces/{workspace_id}/accounts/status`: status das contas do workspace.
+- `GET /workspaces/{workspace_id}/accounts/status?refresh=true`: força nova verificação.
+
+O status usa cache em SQLite por `ACCOUNT_STATUS_CACHE_TTL_SECONDS`. Para TikTok,
+a checagem é leve: valida se existe `session_id` cadastrado e se a lib está disponível;
+a validação web completa continua acontecendo no publish.
+
+### 3. Iniciar ou Agendar um Upload (POST `/publish/omnichannel`)
 
 Envia a requisição para postar o vídeo. O servidor responde imediatamente com um `task_id`.
 Não envie senha, cookie ou session ID neste endpoint. Envie apenas o ID da conta
@@ -143,6 +192,7 @@ a conta pertence à plataforma informada.
 **Exemplo de publicação imediata:**
 ```json
 {
+  "workspace_id": "uuid-do-workspace",
   "mode": "immediate",
   "video_path": "C:/Caminho/Absoluto/Para/Seu/Video.mp4",
   "thumb_path": "C:/Caminho/Absoluto/Para/Sua/Thumb.jpg",
@@ -162,6 +212,7 @@ a conta pertence à plataforma informada.
 **Exemplo de publicação agendada:**
 ```json
 {
+  "workspace_id": "uuid-do-workspace",
   "mode": "scheduled",
   "scheduled_at": "2026-06-24T14:00:00-03:00",
   "video_path": "C:/Caminho/Absoluto/Para/Seu/Video.mp4",
@@ -176,6 +227,8 @@ a conta pertence à plataforma informada.
 Quando `mode` é `scheduled`, o job fica persistido no SQLite com status `queued`.
 O worker interno varre o banco a cada `SCHEDULER_INTERVAL_SECONDS` e dispara jobs
 com `scheduled_at <= now`.
+Quando `workspace_id` é enviado, todas as contas em `accounts` precisam estar
+vinculadas ao workspace informado.
 
 `thumb_path` é opcional. Quando informado, o arquivo precisa existir localmente.
 O backend envia essa imagem como capa/thumbnail nas plataformas suportadas pela
@@ -197,12 +250,13 @@ como `success` e o detalhe fica registrado como evento `platform_warning`.
 > - **Instagram**: A senha é informada no cadastro da conta. No primeiro uso, o sistema faz login e salva a sessão em `sessions/`.
 > - **YouTube**: No primeiro uso, o navegador abrirá na porta `YOUTUBE_OAUTH_PORT` (`8080` por padrão) para autorizar a conta. Depois o token fica salvo em `sessions/`.
 
-### 3. Consultar e Monitorar Publicações
+### 4. Consultar e Monitorar Publicações
 
 As publicações ficam persistidas no SQLite.
 
 - `GET /tasks`: lista publicações persistidas.
 - `GET /tasks?status=queued`: lista publicações por status.
+- `GET /tasks?workspace_id=...`: lista publicações de um workspace.
 - `GET /tasks/{task_id}`: retorna detalhes e status por plataforma.
 - `POST /tasks/{task_id}/cancel`: cancela uma publicação `queued` ou `running`.
 - `GET /tasks/{task_id}/stream`: acompanha atualizações via SSE.
