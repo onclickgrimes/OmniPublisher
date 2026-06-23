@@ -120,11 +120,23 @@ esse ID é o valor que deve ser usado depois em `accounts` no `/publish/omnichan
 }
 ```
 
+Também é possível gerenciar contas com:
+
+- `GET /accounts/`: lista contas cadastradas.
+- `GET /accounts/?platform=tiktok`: lista contas de uma plataforma.
+- `GET /accounts/{account_id}`: consulta uma conta.
+- `PATCH /accounts/{account_id}`: atualiza nome, identificador ou credenciais.
+- `DELETE /accounts/{account_id}`: remove a conta e tenta limpar o arquivo de sessão associado.
+
+As respostas de contas nunca retornam `credentials`.
+
 ### 2. Iniciar um Upload (POST `/publish/omnichannel`)
 
 Envia a requisição para postar o vídeo. O servidor responde imediatamente com um `task_id`.
 Não envie senha, cookie ou session ID neste endpoint. Envie apenas o ID da conta
 previamente cadastrada via `POST /accounts/`.
+O servidor valida antes de criar a task se o arquivo existe, se a conta existe e se
+a conta pertence à plataforma informada.
 
 **Exemplo de Requisição (JSON):**
 ```json
