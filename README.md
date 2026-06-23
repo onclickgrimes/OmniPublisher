@@ -137,12 +137,15 @@ As respostas de contas nunca retornam `credentials`.
 
 Workspaces agrupam contas por projeto/contexto. As contas continuam globais e podem
 estar em vários workspaces ou em nenhum.
+Se o banco não possuir nenhum workspace no boot, o backend cria automaticamente
+um workspace `Default` e vincula contas globais já existentes a ele.
 
 Endpoints:
 
 - `GET /workspaces`: lista workspaces.
 - `POST /workspaces`: cria um workspace.
 - `GET /workspaces/{workspace_id}`: consulta um workspace.
+- `GET /workspaces/{workspace_id}/overview`: retorna workspace, contas, status cacheado e contadores de publicações.
 - `PATCH /workspaces/{workspace_id}`: atualiza nome, slug ou descrição.
 - `DELETE /workspaces/{workspace_id}`: remove o workspace sem apagar contas.
 - `GET /workspaces/{workspace_id}/accounts`: lista contas vinculadas.
@@ -174,12 +177,15 @@ Status de autenticação das contas:
 
 - `GET /accounts/{account_id}/status`: status individual.
 - `GET /accounts/{account_id}/status?refresh=true`: força nova verificação.
+- `POST /accounts/{account_id}/status/refresh`: marca como `checking` e verifica em background.
 - `GET /workspaces/{workspace_id}/accounts/status`: status das contas do workspace.
 - `GET /workspaces/{workspace_id}/accounts/status?refresh=true`: força nova verificação.
+- `POST /workspaces/{workspace_id}/accounts/status/refresh`: marca as contas como `checking` e verifica em background.
 
 O status usa cache em SQLite por `ACCOUNT_STATUS_CACHE_TTL_SECONDS`. Para TikTok,
 a checagem é leve: valida se existe `session_id` cadastrado e se a lib está disponível;
 a validação web completa continua acontecendo no publish.
+O endpoint de overview não força validação; ele retorna apenas cache fresco ou `unknown`.
 
 ### 3. Iniciar ou Agendar um Upload (POST `/publish/omnichannel`)
 

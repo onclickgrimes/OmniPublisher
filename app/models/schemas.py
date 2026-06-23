@@ -7,7 +7,7 @@ from datetime import datetime
 PlatformName = Literal["youtube", "instagram", "tiktok"]
 PublishMode = Literal["immediate", "scheduled"]
 JobStatus = Literal["queued", "running", "success", "error", "canceled"]
-AccountConnectionStatus = Literal["connected", "disconnected", "needs_auth", "error", "unknown"]
+AccountConnectionStatus = Literal["connected", "disconnected", "needs_auth", "checking", "error", "unknown"]
 
 # --- Pydantic Models para Accounts ---
 
@@ -137,6 +137,13 @@ class WorkspaceAccountResponse(BaseModel):
 class WorkspaceAccountsStatusResponse(BaseModel):
     workspace_id: str
     accounts: List[AccountStatusResponse] = Field(default_factory=list)
+
+
+class WorkspaceOverviewResponse(BaseModel):
+    workspace: WorkspaceResponse
+    accounts: List[WorkspaceAccountResponse] = Field(default_factory=list)
+    account_statuses: List[AccountStatusResponse] = Field(default_factory=list)
+    task_counts: Dict[str, int] = Field(default_factory=dict)
 
 # --- Pydantic Models para Publicação ---
 

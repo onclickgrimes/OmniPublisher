@@ -46,6 +46,21 @@ def _status_payload(account: Account, check: AccountStatusCheck, *, cached: bool
     }
 
 
+def _unknown_status_payload(account: Account, message: str) -> dict[str, Any]:
+    now = _utc_now()
+    return {
+        "account_id": account.id,
+        "platform": account.platform,
+        "name": account.name,
+        "identifier": account.identifier,
+        "status": "unknown",
+        "message": message,
+        "checked_at": now,
+        "expires_at": now,
+        "cached": False,
+    }
+
+
 class AccountStatusChecker:
     """
     Verifica e cacheia o estado de autenticação das contas.
@@ -77,6 +92,52 @@ class AccountStatusChecker:
                 checked_at=now,
                 expires_at=expires_at,
                 raw_json=_dumps_json(result.get("raw") or {}),
+            )
+            db.add(check)
+            db.commit()
+            db.refresh(check)
+            return _status_payload(account, check, cached=False)
+        finally:
+            db.close()
+
+    def get_cached_account_status(self, account_id: str) -> dict[str, Any] | None:
+        db = SessionLocal()
+        try:
+            account = db.query(Account).filter(Account.id == account_id).first()
+            if not account:
+                return None
+
+            now = _utc_now()
+            latest = (
+                db.query(AccountStatusCheck)
+                .filter(AccountStatusCheck.account_id == account_id)
+                .order_by(AccountStatusCheck.checked_at.desc())
+                .first()
+            )
+            if latest and latest.expires_at > now:
+                return _status_payload(account, latest, cached=True)
+
+            if latest:
+                return _unknown_status_payload(account, "Status cacheado expirou.")
+            return _unknown_status_payload(account, "Conta ainda não verificada.")
+        finally:
+            db.close()
+
+    def mark_account_checking(self, account_id: str) -> dict[str, Any] | None:
+        db = SessionLocal()
+        try:
+            account = db.query(Account).filter(Account.id == account_id).first()
+            if not account:
+                return None
+
+            now = _utc_now()
+            check = AccountStatusCheck(
+                account_id=account.id,
+                status="checking",
+                message="Verificação de status em andamento.",
+                checked_at=now,
+                expires_at=now + timedelta(seconds=max(1, ACCOUNT_STATUS_CACHE_TTL_SECONDS)),
+                raw_json=_dumps_json({}),
             )
             db.add(check)
             db.commit()
@@ -119,6 +180,63 @@ class AccountStatusChecker:
             "workspace_id": workspace_id,
             "accounts": statuses,
         }
+
+    def get_workspace_accounts_cached_status(self, workspace_id: str) -> dict[str, Any] | None:
+        account_ids = self._workspace_account_ids(workspace_id)
+        if account_ids is None:
+            return None
+
+        statuses = []
+        for account_id in account_ids:
+            status = self.get_cached_account_status(account_id)
+            if status:
+                statuses.append(status)
+
+        return {
+            "workspace_id": workspace_id,
+            "accounts": statuses,
+        }
+
+    def mark_workspace_accounts_checking(self, workspace_id: str) -> dict[str, Any] | None:
+        account_ids = self._workspace_account_ids(workspace_id)
+        if account_ids is None:
+            return None
+
+        statuses = []
+        for account_id in account_ids:
+            status = self.mark_account_checking(account_id)
+            if status:
+                statuses.append(status)
+
+        return {
+            "workspace_id": workspace_id,
+            "accounts": statuses,
+        }
+
+    def refresh_workspace_accounts(self, workspace_id: str):
+        account_ids = self._workspace_account_ids(workspace_id)
+        if account_ids is None:
+            return
+        for account_id in account_ids:
+            self.check_account_status(account_id, refresh=True)
+
+    def _workspace_account_ids(self, workspace_id: str) -> list[str] | None:
+        db = SessionLocal()
+        try:
+            workspace = db.query(Workspace).filter(Workspace.id == workspace_id).first()
+            if not workspace:
+                return None
+            return [
+                row.account_id
+                for row in (
+                    db.query(WorkspaceAccount)
+                    .filter(WorkspaceAccount.workspace_id == workspace_id)
+                    .order_by(WorkspaceAccount.created_at.asc())
+                    .all()
+                )
+            ]
+        finally:
+            db.close()
 
     def _probe_account(self, account: Account) -> dict[str, Any]:
         if account.platform == "youtube":

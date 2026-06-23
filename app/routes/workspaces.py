@@ -2,7 +2,8 @@ import re
 from datetime import datetime
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.db import Account, PublishJob, Workspace, WorkspaceAccount, get_db
@@ -11,6 +12,7 @@ from app.models.schemas import (
     WorkspaceAccountResponse,
     WorkspaceAccountsStatusResponse,
     WorkspaceCreate,
+    WorkspaceOverviewResponse,
     WorkspaceResponse,
     WorkspaceUpdate,
 )
@@ -59,6 +61,17 @@ def _workspace_account_response(row: WorkspaceAccount, account: Account) -> dict
     }
 
 
+def _workspace_accounts(workspace_id: str, db: Session) -> list[dict]:
+    rows = (
+        db.query(WorkspaceAccount, Account)
+        .join(Account, WorkspaceAccount.account_id == Account.id)
+        .filter(WorkspaceAccount.workspace_id == workspace_id)
+        .order_by(Account.platform.asc(), Account.name.asc())
+        .all()
+    )
+    return [_workspace_account_response(row, account) for row, account in rows]
+
+
 @router.get("/workspaces", response_model=List[WorkspaceResponse])
 def list_workspaces(db: Session = Depends(get_db)):
     return db.query(Workspace).order_by(Workspace.created_at.asc()).all()
@@ -85,6 +98,34 @@ def create_workspace(payload: WorkspaceCreate, db: Session = Depends(get_db)):
 @router.get("/workspaces/{workspace_id}", response_model=WorkspaceResponse)
 def get_workspace(workspace_id: str, db: Session = Depends(get_db)):
     return _get_workspace_or_404(workspace_id, db)
+
+
+@router.get("/workspaces/{workspace_id}/overview", response_model=WorkspaceOverviewResponse)
+def get_workspace_overview(workspace_id: str, db: Session = Depends(get_db)):
+    workspace = _get_workspace_or_404(workspace_id, db)
+    accounts = _workspace_accounts(workspace_id, db)
+    statuses = account_status_checker.get_workspace_accounts_cached_status(workspace_id)
+    counts = {
+        "queued": 0,
+        "running": 0,
+        "success": 0,
+        "error": 0,
+        "canceled": 0,
+    }
+    for status, count in (
+        db.query(PublishJob.status, func.count(PublishJob.id))
+        .filter(PublishJob.workspace_id == workspace_id)
+        .group_by(PublishJob.status)
+        .all()
+    ):
+        counts[str(status)] = int(count)
+
+    return {
+        "workspace": workspace,
+        "accounts": accounts,
+        "account_statuses": statuses["accounts"] if statuses else [],
+        "task_counts": counts,
+    }
 
 
 @router.patch("/workspaces/{workspace_id}", response_model=WorkspaceResponse)
@@ -129,14 +170,7 @@ def delete_workspace(workspace_id: str, db: Session = Depends(get_db)):
 @router.get("/workspaces/{workspace_id}/accounts", response_model=List[WorkspaceAccountResponse])
 def list_workspace_accounts(workspace_id: str, db: Session = Depends(get_db)):
     _get_workspace_or_404(workspace_id, db)
-    rows = (
-        db.query(WorkspaceAccount, Account)
-        .join(Account, WorkspaceAccount.account_id == Account.id)
-        .filter(WorkspaceAccount.workspace_id == workspace_id)
-        .order_by(Account.platform.asc(), Account.name.asc())
-        .all()
-    )
-    return [_workspace_account_response(row, account) for row, account in rows]
+    return _workspace_accounts(workspace_id, db)
 
 
 @router.post("/workspaces/{workspace_id}/accounts", response_model=WorkspaceAccountResponse)
@@ -206,4 +240,17 @@ def get_workspace_accounts_status(workspace_id: str, refresh: bool = False):
     )
     if result is None:
         raise HTTPException(status_code=404, detail="Workspace não encontrado.")
+    return result
+
+
+@router.post("/workspaces/{workspace_id}/accounts/status/refresh", response_model=WorkspaceAccountsStatusResponse)
+def refresh_workspace_accounts_status(
+    workspace_id: str,
+    background_tasks: BackgroundTasks,
+):
+    result = account_status_checker.mark_workspace_accounts_checking(workspace_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Workspace não encontrado.")
+
+    background_tasks.add_task(account_status_checker.refresh_workspace_accounts, workspace_id)
     return result

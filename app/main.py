@@ -7,6 +7,7 @@ from app.routes import publish, tasks, accounts, workspaces
 from app.services.session_manager import session_manager
 from app.services.scheduler import scheduler
 from app.services.task_manager import task_manager
+from app.services.workspace_bootstrap import ensure_default_workspace
 from app.models.db import engine, Base, ensure_database_schema
 from app.config import (
     APP_NAME,
@@ -27,6 +28,7 @@ from app.config import (
 # Cria as tabelas do SQLite no banco (se não existirem)
 Base.metadata.create_all(bind=engine)
 ensure_database_schema()
+ensure_default_workspace()
 
 app = FastAPI(
     title=APP_NAME,

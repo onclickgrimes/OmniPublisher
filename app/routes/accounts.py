@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -114,6 +114,23 @@ def get_account_status(account_id: str, refresh: bool = False):
     status = account_status_checker.check_account_status(account_id, refresh=refresh)
     if not status:
         raise HTTPException(status_code=404, detail="Conta não encontrada.")
+    return status
+
+
+@router.post("/{account_id}/status/refresh", response_model=AccountStatusResponse)
+def refresh_account_status(account_id: str, background_tasks: BackgroundTasks):
+    """
+    Marca a conta como checking e dispara uma nova verificação em background.
+    """
+    status = account_status_checker.mark_account_checking(account_id)
+    if not status:
+        raise HTTPException(status_code=404, detail="Conta não encontrada.")
+
+    background_tasks.add_task(
+        account_status_checker.check_account_status,
+        account_id,
+        refresh=True,
+    )
     return status
 
 
