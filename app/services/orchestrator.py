@@ -8,6 +8,16 @@ from app.providers.youtube_api import YouTubeProvider
 from app.providers.instagram_api import InstagramProvider
 from app.providers.tiktok_api import TikTokProvider
 
+
+def _validate_provider_result(platform_name: str, result):
+    if result is None:
+        raise Exception(f"Provider '{platform_name}' não retornou resultado de upload.")
+
+    if isinstance(result, dict) and result.get("success") is False:
+        message = result.get("message") or result.get("error") or result.get("detail")
+        raise Exception(str(message or f"Provider '{platform_name}' retornou falha."))
+
+
 class PublishOrchestrator:
     def __init__(self):
         self.providers_map: Dict[str, type[BaseProvider]] = {
@@ -47,6 +57,7 @@ class PublishOrchestrator:
             }
 
             result = await provider.upload(request.video_path, request.caption, **kwargs)
+            _validate_provider_result(platform_name, result)
             
             await task_manager.update_status(
                 task_id, platform_name, "success", progress=100
