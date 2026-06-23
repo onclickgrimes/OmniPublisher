@@ -75,19 +75,70 @@ o banco `omnipublisher.db` e a pasta `sessions/` ficam na raiz do projeto.
 
 ## Como Consumir a Aplicação (Documentação da API)
 
-### 1. Iniciar um Upload (POST `/publish/omnichannel`)
+### 1. Cadastrar uma Conta (POST `/accounts/`)
+
+Antes de publicar, cadastre a conta da plataforma. O endpoint retorna um `id`;
+esse ID é o valor que deve ser usado depois em `accounts` no `/publish/omnichannel`.
+
+**Exemplo TikTok:**
+```json
+{
+  "platform": "tiktok",
+  "name": "TikTok Principal",
+  "identifier": "@minha_conta",
+  "credentials": "COOKIE_SESSIONID_DO_TIKTOK"
+}
+```
+
+**Exemplo Instagram:**
+```json
+{
+  "platform": "instagram",
+  "name": "Instagram Principal",
+  "identifier": "meu_usuario",
+  "credentials": "minha_senha"
+}
+```
+
+**Exemplo YouTube:**
+```json
+{
+  "platform": "youtube",
+  "name": "Canal Principal",
+  "identifier": "email@exemplo.com",
+  "credentials": null
+}
+```
+
+**Exemplo de Resposta:**
+```json
+{
+  "id": "a1f4f6fd-0974-4556-b88d-b2327a478170",
+  "platform": "tiktok",
+  "name": "TikTok Principal",
+  "identifier": "@minha_conta"
+}
+```
+
+### 2. Iniciar um Upload (POST `/publish/omnichannel`)
 
 Envia a requisição para postar o vídeo. O servidor responde imediatamente com um `task_id`.
+Não envie senha, cookie ou session ID neste endpoint. Envie apenas o ID da conta
+previamente cadastrada via `POST /accounts/`.
 
 **Exemplo de Requisição (JSON):**
 ```json
 {
   "video_path": "C:/Caminho/Absoluto/Para/Seu/Video.mp4",
   "caption": "Este é um teste incrível do OmniPublisher! #teste #viral",
-  "platforms": ["youtube", "instagram", "tiktok"],
-  "tiktok_session_id": "SEU_COOKIE_SESSIONID_DO_TIKTOK_AQUI",
+  "accounts": {
+    "youtube": "uuid-da-conta-youtube",
+    "instagram": "uuid-da-conta-instagram",
+    "tiktok": "a1f4f6fd-0974-4556-b88d-b2327a478170"
+  },
   "youtube_title": "Título Incrível",
   "youtube_tags": ["python", "automacao"],
+  "youtube_privacy": "public",
   "instagram_format": "reels"
 }
 ```
@@ -102,10 +153,11 @@ Envia a requisição para postar o vídeo. O servidor responde imediatamente com
 ```
 
 > **Aviso sobre Sessões:** 
-> - **Instagram**: No primeiro uso, o sistema vai demorar um pouco para fazer o login. Depois ele gera o arquivo `sessions/instagram_settings.json` e as próximas postagens não exigirão re-autenticação.
-> - **YouTube**: No primeiro uso, o console abrirá uma aba no navegador na porta `8080` pedindo que você autorize com sua conta do Google. Depois o token é salvo.
+> - **TikTok**: O cookie/session ID é informado no cadastro da conta e fica salvo no banco. No publish, use apenas o `id` dessa conta.
+> - **Instagram**: A senha é informada no cadastro da conta. No primeiro uso, o sistema faz login e salva a sessão em `sessions/`.
+> - **YouTube**: No primeiro uso, o navegador abrirá na porta `YOUTUBE_OAUTH_PORT` (`8080` por padrão) para autorizar a conta. Depois o token fica salvo em `sessions/`.
 
-### 2. Monitoramento em Tempo Real (GET `/tasks/{task_id}/stream`)
+### 3. Monitoramento em Tempo Real (GET `/tasks/{task_id}/stream`)
 
 Para não precisar fazer *polling*, o backend usa SSE (Server-Sent Events).
 
