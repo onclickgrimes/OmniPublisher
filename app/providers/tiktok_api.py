@@ -50,6 +50,17 @@ def _split_diagnostic_lines(*values: str) -> list[str]:
     return lines
 
 
+def _remove_tiktok_upload_overlays(page):
+    try:
+        page.evaluate("""
+            document
+                .querySelectorAll('.TUXModal-overlay, .react-joyride__overlay, #react-joyride-portal, [data-test-id="overlay"]')
+                .forEach(el => el.remove());
+        """)
+    except Exception:
+        pass
+
+
 def _run_tiktok_upload(video_path: str, caption: str, session_id: str):
     # pyrefly: ignore [missing-import]
     import tiktok_uploader.upload as tiktok_up
@@ -60,13 +71,7 @@ def _run_tiktok_upload(video_path: str, caption: str, session_id: str):
     original_remove_split_window = tiktok_up._remove_split_window
     
     def _patched_remove_split_window(page):
-        try:
-            # Tenta deletar da tela os overlays que bloqueiam os cliques
-            page.evaluate("""
-                document.querySelectorAll('.TUXModal-overlay, .react-joyride__overlay, #react-joyride-portal').forEach(el => el.remove());
-            """)
-        except:
-            pass
+        _remove_tiktok_upload_overlays(page)
         return original_remove_split_window(page)
         
     tiktok_up._remove_split_window = _patched_remove_split_window
@@ -113,6 +118,7 @@ def _run_tiktok_upload(video_path: str, caption: str, session_id: str):
         }
     finally:
         config.quit_on_end = previous_quit_on_end
+        tiktok_up._remove_split_window = original_remove_split_window
         tiktok_up.logger.removeHandler(log_handler)
 
     diagnostics = _split_diagnostic_lines(
@@ -181,7 +187,7 @@ def _describe_failed_uploads(failed_uploads, logs: list[str] | None = None) -> s
     return detail
 
 
-def _validate_tiktok_upload_result(result):
+def _validate_tiktok_upload_result(result) -> list[dict[str, Any]]:
     """
     tiktok_uploader.upload_video retorna lista de vídeos que falharam.
     Lista vazia significa sucesso; lista com itens significa falha.
@@ -195,7 +201,7 @@ def _validate_tiktok_upload_result(result):
 
     if isinstance(failed_uploads, list):
         if not failed_uploads:
-            return
+            return []
         detail = _describe_failed_uploads(failed_uploads, logs)
         raise Exception(f"Upload do TikTok falhou: {detail or failed_uploads}")
 
@@ -239,14 +245,19 @@ class TikTokProvider(BaseProvider):
         except Exception as e:
             raise Exception(f"Falha ao executar o selenium do TikTok: {str(e)}")
 
-        _validate_tiktok_upload_result(result)
+        warnings = _validate_tiktok_upload_result(result)
 
         if task_id:
             await task_manager.update_status(
                 task_id, self.platform_name, "uploading", progress=95
             )
 
-        return {"success": True, "message": "Upload do TikTok concluído", "detail": result}
+        return {
+            "success": True,
+            "message": "Upload do TikTok concluído",
+            "detail": result,
+            "warnings": warnings,
+        }
 
     async def validate_session(self) -> bool:
         return True

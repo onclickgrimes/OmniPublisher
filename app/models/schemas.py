@@ -82,6 +82,10 @@ class PublishRequest(BaseModel):
         ),
     )
     video_path: str = Field(..., description="Caminho absoluto do arquivo de vídeo")
+    thumb_path: Optional[str] = Field(
+        None,
+        description="Caminho absoluto opcional da imagem de capa/thumbnail do vídeo.",
+    )
     caption: str = Field(..., description="Legenda do vídeo")
     
     # Agora recebemos um mapeamento de plataforma para ID da conta
@@ -104,6 +108,7 @@ class PublishRequest(BaseModel):
             "example": {
                 "mode": "immediate",
                 "video_path": "C:/Projetos-NestJS/OmniPublisher/1-1.mp4",
+                "thumb_path": "C:/Projetos-NestJS/OmniPublisher/1-1.mp4.jpg",
                 "caption": "Publicacao via OmniPublisher! #ola",
                 "accounts": {
                     "tiktok": "a1f4f6fd-0974-4556-b88d-b2327a478170",
@@ -158,6 +163,7 @@ class PublishJobResponse(BaseModel):
     mode: str
     status: str
     video_path: str
+    thumb_path: Optional[str] = None
     caption: str
     accounts: Dict[str, str]
     youtube_title: Optional[str] = None

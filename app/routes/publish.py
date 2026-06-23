@@ -35,6 +35,14 @@ def _validate_publish_request(request: PublishRequest, db: Session):
             detail=f"O arquivo de vídeo não foi encontrado no caminho: {request.video_path}",
         )
 
+    if request.thumb_path is not None:
+        request.thumb_path = request.thumb_path.strip() or None
+        if request.thumb_path and not os.path.isfile(request.thumb_path):
+            raise HTTPException(
+                status_code=400,
+                detail=f"O arquivo de thumbnail não foi encontrado no caminho: {request.thumb_path}",
+            )
+
     if not request.accounts:
         raise HTTPException(
             status_code=400,

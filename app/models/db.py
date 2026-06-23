@@ -41,6 +41,7 @@ class PublishJob(Base):
     mode = Column(String, index=True, nullable=False, default="immediate")
     status = Column(String, index=True, nullable=False, default="queued")
     video_path = Column(Text, nullable=False)
+    thumb_path = Column(Text, nullable=True)
     caption = Column(Text, nullable=False)
     accounts_json = Column(Text, nullable=False)
     youtube_title = Column(Text, nullable=True)
@@ -91,3 +92,15 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def ensure_database_schema():
+    """
+    Aplica pequenas migrações compatíveis com SQLite para bancos de dev existentes.
+    """
+    with engine.begin() as conn:
+        publish_job_columns = {
+            row[1] for row in conn.exec_driver_sql("PRAGMA table_info(publish_jobs)").fetchall()
+        }
+        if "thumb_path" not in publish_job_columns:
+            conn.exec_driver_sql("ALTER TABLE publish_jobs ADD COLUMN thumb_path TEXT")

@@ -15,7 +15,7 @@ class BaseProvider(ABC):
         Args:
             video_path (str): Caminho absoluto para o arquivo .mp4 local.
             caption (str): Legenda do vídeo.
-            **kwargs: Parâmetros adicionais específicos da plataforma.
+            **kwargs: Parâmetros adicionais específicos da plataforma, como thumb_path.
             
         Returns:
             Dict[str, Any]: Dicionário com informações de sucesso/falha.

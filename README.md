@@ -145,6 +145,7 @@ a conta pertence à plataforma informada.
 {
   "mode": "immediate",
   "video_path": "C:/Caminho/Absoluto/Para/Seu/Video.mp4",
+  "thumb_path": "C:/Caminho/Absoluto/Para/Sua/Thumb.jpg",
   "caption": "Este é um teste incrível do OmniPublisher! #teste #viral",
   "accounts": {
     "youtube": "uuid-da-conta-youtube",
@@ -164,6 +165,7 @@ a conta pertence à plataforma informada.
   "mode": "scheduled",
   "scheduled_at": "2026-06-24T14:00:00-03:00",
   "video_path": "C:/Caminho/Absoluto/Para/Seu/Video.mp4",
+  "thumb_path": "C:/Caminho/Absoluto/Para/Sua/Thumb.jpg",
   "caption": "Post agendado pelo OmniPublisher! #teste",
   "accounts": {
     "tiktok": "a1f4f6fd-0974-4556-b88d-b2327a478170"
@@ -174,6 +176,12 @@ a conta pertence à plataforma informada.
 Quando `mode` é `scheduled`, o job fica persistido no SQLite com status `queued`.
 O worker interno varre o banco a cada `SCHEDULER_INTERVAL_SECONDS` e dispara jobs
 com `scheduled_at <= now`.
+
+`thumb_path` é opcional. Quando informado, o arquivo precisa existir localmente.
+O backend envia essa imagem como capa/thumbnail nas plataformas suportadas pela
+integração atual: YouTube e Instagram. No TikTok, `thumb_path` é ignorado.
+Se o vídeo for publicado mas a plataforma recusar a capa/thumbnail, o job continua
+como `success` e o detalhe fica registrado como evento `platform_warning`.
 
 **Exemplo de Resposta (200 OK):**
 ```json
@@ -227,4 +235,4 @@ evtSource.onmessage = (event) => {
     }
 };
 ```
-O evento trafega progressos e status (`pending`, `uploading`, `success`, `error`) de cada rede de forma assíncrona.
+O evento trafega progressos, avisos e status (`pending`, `uploading`, `success`, `error`, `canceled`) de cada rede de forma assíncrona.

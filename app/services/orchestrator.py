@@ -18,6 +18,25 @@ def _validate_provider_result(platform_name: str, result):
         raise Exception(str(message or f"Provider '{platform_name}' retornou falha."))
 
 
+def _provider_warnings(result) -> list[dict]:
+    if not isinstance(result, dict):
+        return []
+
+    warnings = result.get("warnings") or []
+    if isinstance(warnings, (str, dict)):
+        warnings = [warnings]
+
+    normalized = []
+    for warning in warnings:
+        if isinstance(warning, dict):
+            message = warning.get("message") or warning.get("warning") or warning.get("detail")
+            if message:
+                normalized.append({**warning, "message": str(message)})
+        elif warning:
+            normalized.append({"message": str(warning)})
+    return normalized
+
+
 class PublishOrchestrator:
     def __init__(self):
         self.providers_map: Dict[str, type[BaseProvider]] = {
@@ -53,11 +72,20 @@ class PublishOrchestrator:
                 "title": request.youtube_title,
                 "tags": request.youtube_tags,
                 "youtube_privacy": request.youtube_privacy,
-                "instagram_format": request.instagram_format
+                "instagram_format": request.instagram_format,
+                "thumb_path": request.thumb_path,
             }
 
             result = await provider.upload(request.video_path, request.caption, **kwargs)
             _validate_provider_result(platform_name, result)
+
+            for warning in _provider_warnings(result):
+                await task_manager.record_platform_warning(
+                    task_id,
+                    platform_name,
+                    warning["message"],
+                    {key: value for key, value in warning.items() if key != "message"},
+                )
             
             await task_manager.update_status(
                 task_id, platform_name, "success", progress=100

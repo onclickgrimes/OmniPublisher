@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 from typing import Dict, Any
 
 from app.providers.base import BaseProvider
@@ -13,6 +14,7 @@ class InstagramProvider(BaseProvider):
         task_id = kwargs.get("task_id")
         account_id = kwargs.get("account_id")
         instagram_format = kwargs.get("instagram_format", "reels")
+        thumb_path = kwargs.get("thumb_path")
         
         if not account_id:
             raise ValueError("account_id é obrigatório para o InstagramProvider.")
@@ -26,10 +28,11 @@ class InstagramProvider(BaseProvider):
             )
 
         def _do_upload():
+            thumbnail = Path(thumb_path) if thumb_path else None
             if instagram_format == "reels":
-                return cl.clip_upload(path=video_path, caption=caption)
+                return cl.clip_upload(path=video_path, caption=caption, thumbnail=thumbnail)
             elif instagram_format == "feed":
-                return cl.video_upload(path=video_path, caption=caption)
+                return cl.video_upload(path=video_path, caption=caption, thumbnail=thumbnail)
             else:
                 raise ValueError("Formato de instagram inválido.")
 

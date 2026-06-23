@@ -162,6 +162,54 @@ class TaskManager:
         finally:
             db.close()
 
+    async def record_platform_warning(
+        self,
+        task_id: str,
+        platform: str,
+        message: str,
+        payload: dict[str, Any] | None = None,
+    ):
+        """
+        Registra um aviso não fatal de plataforma, sem alterar o status do upload.
+        """
+        now = _utc_now()
+        event_payload = {
+            "platform": platform,
+            **(payload or {}),
+        }
+
+        db = SessionLocal()
+        try:
+            job = db.query(PublishJob).filter(PublishJob.id == task_id).first()
+            if not job or job.status == "canceled":
+                return
+
+            job.updated_at = now
+            self._add_event(
+                db,
+                task_id,
+                "platform_warning",
+                message,
+                event_payload,
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        await self._notify_subscribers(
+            task_id,
+            {
+                "type": "warning",
+                "task_id": task_id,
+                "platform": platform,
+                "status": self.tasks_state.get(task_id).platforms.get(platform).status
+                if task_id in self.tasks_state and platform in self.tasks_state[task_id].platforms
+                else None,
+                "warning": message,
+                "payload": event_payload,
+            },
+        )
+
     def get_publish_request(self, task_id: str) -> PublishRequest | None:
         db = SessionLocal()
         try:
@@ -474,6 +522,7 @@ class TaskManager:
             job.mode = mode
             job.status = status
             job.video_path = request.video_path
+            job.thumb_path = request.thumb_path
             job.caption = request.caption
             job.accounts_json = _dumps_json(accounts)
             job.youtube_title = request.youtube_title
@@ -623,6 +672,7 @@ class TaskManager:
             mode=job.mode,
             scheduled_at=job.scheduled_at,
             video_path=job.video_path,
+            thumb_path=job.thumb_path,
             caption=job.caption,
             accounts=_loads_json(job.accounts_json, {}),
             youtube_title=job.youtube_title,
@@ -650,6 +700,7 @@ class TaskManager:
             "mode": job.mode,
             "status": job.status,
             "video_path": job.video_path,
+            "thumb_path": job.thumb_path,
             "caption": job.caption,
             "accounts": _loads_json(job.accounts_json, {}),
             "youtube_title": job.youtube_title,
