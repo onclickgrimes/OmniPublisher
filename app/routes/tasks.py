@@ -29,6 +29,24 @@ def get_task(task_id: str):
     return job
 
 
+@router.post("/tasks/{task_id}/cancel", response_model=PublishJobResponse)
+async def cancel_task(task_id: str):
+    """
+    Cancela uma publicação queued/running.
+    """
+    canceled = await task_manager.cancel_job(task_id)
+    if not canceled:
+        job = task_manager.get_job(task_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Task ID não encontrado.")
+        raise HTTPException(status_code=409, detail=f"Task já está em estado terminal: {job['status']}.")
+
+    job = task_manager.get_job(task_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Task ID não encontrado.")
+    return job
+
+
 @router.get("/tasks/{task_id}/stream")
 async def stream_task(task_id: str):
     """
@@ -44,7 +62,7 @@ async def stream_task(task_id: str):
 
     def all_done(platforms_state) -> bool:
         """Verifica se todas as plataformas terminaram (success ou error)"""
-        return all(plat.status in ["success", "error"] for plat in platforms_state.values())
+        return all(plat.status in ["success", "error", "canceled"] for plat in platforms_state.values())
 
     async def event_generator():
         # Envia o estado inicial assim que conecta

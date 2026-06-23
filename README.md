@@ -69,6 +69,7 @@ OMNIPUBLISHER_DB_PATH=C:/Users/seu_usuario/AppData/Roaming/SeuApp/omnipublisher/
 OMNIPUBLISHER_SESSIONS_DIR=C:/Users/seu_usuario/AppData/Roaming/SeuApp/omnipublisher/sessions
 YOUTUBE_OAUTH_PORT=8080
 SCHEDULER_INTERVAL_SECONDS=30
+RUNNING_JOB_STALE_MINUTES=30
 ```
 
 Se `OMNIPUBLISHER_DATA_DIR` não for definido, o comportamento de dev é preservado:
@@ -195,6 +196,7 @@ As publicações ficam persistidas no SQLite.
 - `GET /tasks`: lista publicações persistidas.
 - `GET /tasks?status=queued`: lista publicações por status.
 - `GET /tasks/{task_id}`: retorna detalhes e status por plataforma.
+- `POST /tasks/{task_id}/cancel`: cancela uma publicação `queued` ou `running`.
 - `GET /tasks/{task_id}/stream`: acompanha atualizações via SSE.
 
 Status principais:
@@ -203,7 +205,11 @@ Status principais:
 - `running`: publicação em andamento.
 - `success`: todas as plataformas concluíram com sucesso.
 - `error`: pelo menos uma plataforma falhou.
-- `canceled`: reservado para cancelamento futuro.
+- `canceled`: publicação cancelada antes de concluir.
+
+O scheduler também marca como erro jobs `running` que excedem `TIMEOUT_SECONDS`.
+No startup, jobs `running` antigos são recuperados como erro após `RUNNING_JOB_STALE_MINUTES`,
+pois nenhuma execução em memória sobrevive a reinício do processo.
 
 Para não precisar fazer *polling*, o backend usa SSE (Server-Sent Events).
 

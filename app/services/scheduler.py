@@ -1,6 +1,6 @@
 import asyncio
 
-from app.config import SCHEDULER_INTERVAL_SECONDS
+from app.config import SCHEDULER_INTERVAL_SECONDS, TIMEOUT_SECONDS
 from app.services.orchestrator import orchestrator
 from app.services.task_manager import task_manager
 
@@ -46,6 +46,11 @@ class PublishScheduler:
                 pass
 
     async def run_once(self):
+        await task_manager.fail_stale_running_jobs(
+            TIMEOUT_SECONDS,
+            f"Timeout de execução excedido ({TIMEOUT_SECONDS}s).",
+        )
+
         for task_id in task_manager.claim_due_jobs():
             request = task_manager.get_publish_request(task_id)
             if not request:

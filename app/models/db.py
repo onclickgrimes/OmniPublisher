@@ -70,6 +70,20 @@ class PublishPlatformStatus(Base):
     error = Column(Text, nullable=True)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
+
+class PublishJobEvent(Base):
+    """
+    Registro append-only de eventos relevantes de um job.
+    """
+    __tablename__ = "publish_job_events"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    job_id = Column(String(36), ForeignKey("publish_jobs.id"), index=True, nullable=False)
+    type = Column(String, index=True, nullable=False)
+    message = Column(Text, nullable=False)
+    payload_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
 # Dependência para injetar a sessão do DB nas rotas do FastAPI
 def get_db():
     db = SessionLocal()

@@ -117,7 +117,7 @@ class PublishRequest(BaseModel):
 
 class PlatformStatus(BaseModel):
     platform: str
-    status: Literal["pending", "uploading", "success", "error"]
+    status: Literal["pending", "uploading", "success", "error", "canceled"]
     progress: int = 0
     error: Optional[str] = None
 
@@ -143,6 +143,15 @@ class PublishPlatformStatusResponse(BaseModel):
     updated_at: datetime
 
 
+class PublishJobEventResponse(BaseModel):
+    id: str
+    job_id: str
+    type: str
+    message: str
+    payload: Optional[dict] = None
+    created_at: datetime
+
+
 class PublishJobResponse(BaseModel):
     id: str
     task_id: str
@@ -162,3 +171,4 @@ class PublishJobResponse(BaseModel):
     finished_at: Optional[datetime] = None
     error: Optional[str] = None
     platforms: List[PublishPlatformStatusResponse] = Field(default_factory=list)
+    events: List[PublishJobEventResponse] = Field(default_factory=list)

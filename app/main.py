@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routes import publish, tasks, accounts
 from app.services.session_manager import session_manager
 from app.services.scheduler import scheduler
+from app.services.task_manager import task_manager
 from app.models.db import engine, Base
 from app.config import (
     APP_NAME,
@@ -15,6 +16,7 @@ from app.config import (
     OMNIPUBLISHER_HOST,
     OMNIPUBLISHER_PORT,
     OMNIPUBLISHER_PUBLIC_BASE_URL,
+    RUNNING_JOB_STALE_MINUTES,
     SCHEDULER_INTERVAL_SECONDS,
     SESSIONS_DIR,
     YOUTUBE_CLIENT_SECRETS_FILE,
@@ -49,6 +51,9 @@ async def startup_event():
     """
     Executado ao iniciar a aplicação.
     """
+    recovered = task_manager.recover_interrupted_jobs(RUNNING_JOB_STALE_MINUTES)
+    if recovered:
+        print(f"{len(recovered)} job(s) running antigo(s) marcados como error no startup.")
     await scheduler.start()
     print(f"{APP_NAME} iniciado com sucesso!")
 
@@ -92,6 +97,7 @@ def runtime():
         "youtubeClientSecretsFile": str(YOUTUBE_CLIENT_SECRETS_FILE),
         "youtubeOauthPort": YOUTUBE_OAUTH_PORT,
         "schedulerIntervalSeconds": SCHEDULER_INTERVAL_SECONDS,
+        "runningJobStaleMinutes": RUNNING_JOB_STALE_MINUTES,
     }
 
 @app.get("/")

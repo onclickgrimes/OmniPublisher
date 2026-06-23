@@ -1,13 +1,14 @@
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
-from app.models.db import PublishJob, PublishPlatformStatus, SessionLocal
+from app.models.db import PublishJob, PublishJobEvent, PublishPlatformStatus, SessionLocal
 from app.models.schemas import PlatformStatus, PublishJobResponse, PublishRequest, TaskState
 
 
-TERMINAL_PLATFORM_STATUSES = {"success", "error"}
+TERMINAL_JOB_STATUSES = {"success", "error", "canceled"}
+TERMINAL_PLATFORM_STATUSES = {"success", "error", "canceled"}
 
 
 def _model_dump(model, **kwargs):
@@ -35,6 +36,10 @@ def _loads_json(value: str | None, fallback: Any):
         return json.loads(value)
     except json.JSONDecodeError:
         return fallback
+
+
+def _dumps_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False)
 
 
 class TaskManager:
@@ -82,6 +87,21 @@ class TaskManager:
         if task_id in self._subscribers and queue in self._subscribers[task_id]:
             self._subscribers[task_id].remove(queue)
 
+    async def _notify_subscribers(self, task_id: str, event_payload: dict[str, Any]):
+        if task_id in self._subscribers:
+            for queue in list(self._subscribers[task_id]):
+                await queue.put(event_payload)
+
+    def _job_has_terminal_status(self, task_id: str, statuses: set[str] | None = None) -> bool:
+        db = SessionLocal()
+        try:
+            job = db.query(PublishJob).filter(PublishJob.id == task_id).first()
+            if not job:
+                return False
+            return job.status in (statuses or TERMINAL_JOB_STATUSES)
+        finally:
+            db.close()
+
     async def update_status(
         self,
         task_id: str,
@@ -93,6 +113,9 @@ class TaskManager:
         """
         Atualiza o status de uma plataforma em uma task, persiste e notifica via SSE.
         """
+        if status != "canceled" and self._job_has_terminal_status(task_id, {"canceled"}):
+            return
+
         task_state = self.ensure_memory_task(task_id)
         if not task_state:
             return
@@ -124,11 +147,17 @@ class TaskManager:
         db = SessionLocal()
         try:
             job = db.query(PublishJob).filter(PublishJob.id == task_id).first()
-            if not job or job.status in {"success", "error", "canceled"}:
+            if not job or job.status in TERMINAL_JOB_STATUSES:
                 return
             job.status = "running"
             job.started_at = job.started_at or now
             job.updated_at = now
+            self._add_event(
+                db,
+                task_id,
+                "job_running",
+                "Job marcado como em execução.",
+            )
             db.commit()
         finally:
             db.close()
@@ -183,6 +212,13 @@ class TaskManager:
                 job.started_at = job.started_at or now
                 job.updated_at = now
                 job_ids.append(job.id)
+                self._add_event(
+                    db,
+                    job.id,
+                    "scheduled_due",
+                    "Job agendado vencido; execução iniciada pelo scheduler.",
+                    {"scheduled_at": job.scheduled_at.isoformat() if job.scheduled_at else None},
+                )
             db.commit()
             return job_ids
         finally:
@@ -194,13 +230,213 @@ class TaskManager:
         try:
             job = db.query(PublishJob).filter(PublishJob.id == task_id).first()
             if job:
+                if job.status in TERMINAL_JOB_STATUSES:
+                    return
                 job.status = "error"
                 job.error = error
                 job.finished_at = job.finished_at or now
                 job.updated_at = now
+
+                rows = (
+                    db.query(PublishPlatformStatus)
+                    .filter(PublishPlatformStatus.job_id == task_id)
+                    .all()
+                )
+                for row in rows:
+                    if row.status not in TERMINAL_PLATFORM_STATUSES:
+                        row.status = "error"
+                        row.error = error
+                        row.updated_at = now
+
+                self._add_event(
+                    db,
+                    task_id,
+                    "job_error",
+                    error,
+                )
                 db.commit()
         finally:
             db.close()
+
+    async def cancel_job(self, task_id: str, reason: str = "Job cancelado pelo usuário.") -> bool:
+        now = _utc_now()
+        changed_platforms: list[str] = []
+        db = SessionLocal()
+        try:
+            job = db.query(PublishJob).filter(PublishJob.id == task_id).first()
+            if not job:
+                return False
+            if job.status in {"success", "error", "canceled"}:
+                return False
+
+            job.status = "canceled"
+            job.error = reason
+            job.finished_at = job.finished_at or now
+            job.updated_at = now
+
+            rows = (
+                db.query(PublishPlatformStatus)
+                .filter(PublishPlatformStatus.job_id == task_id)
+                .all()
+            )
+            for row in rows:
+                if row.status not in TERMINAL_PLATFORM_STATUSES:
+                    row.status = "canceled"
+                    row.error = reason
+                    row.updated_at = now
+                    changed_platforms.append(row.platform)
+
+            self._add_event(
+                db,
+                task_id,
+                "job_canceled",
+                reason,
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        task_state = self.ensure_memory_task(task_id)
+        if task_state:
+            for platform in changed_platforms:
+                plat_status = task_state.platforms.get(platform)
+                if plat_status:
+                    plat_status.status = "canceled"
+                    plat_status.error = reason
+                    plat_status.progress = plat_status.progress or 0
+
+                await self._notify_subscribers(
+                    task_id,
+                    {
+                        "task_id": task_id,
+                        "platform": platform,
+                        "status": "canceled",
+                        "progress": plat_status.progress if plat_status else 0,
+                        "error": reason,
+                    },
+                )
+        return True
+
+    async def fail_stale_running_jobs(self, max_age_seconds: int, reason: str) -> list[str]:
+        cutoff = _utc_now() - timedelta(seconds=max(1, max_age_seconds))
+        failed_job_ids: list[str] = []
+        db = SessionLocal()
+        try:
+            jobs = (
+                db.query(PublishJob)
+                .filter(PublishJob.status == "running")
+                .filter(PublishJob.started_at.isnot(None))
+                .filter(PublishJob.started_at <= cutoff)
+                .all()
+            )
+            for job in jobs:
+                job.status = "error"
+                job.error = reason
+                job.finished_at = job.finished_at or _utc_now()
+                job.updated_at = _utc_now()
+                failed_job_ids.append(job.id)
+
+                rows = (
+                    db.query(PublishPlatformStatus)
+                    .filter(PublishPlatformStatus.job_id == job.id)
+                    .all()
+                )
+                for row in rows:
+                    if row.status not in TERMINAL_PLATFORM_STATUSES:
+                        row.status = "error"
+                        row.error = reason
+                        row.updated_at = _utc_now()
+
+                self._add_event(
+                    db,
+                    job.id,
+                    "job_timeout",
+                    reason,
+                    {"max_age_seconds": max_age_seconds},
+                )
+            db.commit()
+        finally:
+            db.close()
+
+        for task_id in failed_job_ids:
+            task_state = self.ensure_memory_task(task_id)
+            if not task_state:
+                continue
+            for platform, plat_status in task_state.platforms.items():
+                if plat_status.status not in TERMINAL_PLATFORM_STATUSES:
+                    plat_status.status = "error"
+                    plat_status.error = reason
+                    await self._notify_subscribers(
+                        task_id,
+                        {
+                            "task_id": task_id,
+                            "platform": platform,
+                            "status": "error",
+                            "progress": plat_status.progress,
+                            "error": reason,
+                        },
+                    )
+        return failed_job_ids
+
+    def recover_interrupted_jobs(self, max_age_minutes: int) -> list[str]:
+        cutoff = _utc_now() - timedelta(minutes=max(0, max_age_minutes))
+        reason = "Job interrompido por reinício ou queda do processo."
+        recovered_job_ids: list[str] = []
+        db = SessionLocal()
+        try:
+            jobs = (
+                db.query(PublishJob)
+                .filter(PublishJob.status == "running")
+                .filter(PublishJob.updated_at <= cutoff)
+                .all()
+            )
+            for job in jobs:
+                job.status = "error"
+                job.error = reason
+                job.finished_at = job.finished_at or _utc_now()
+                job.updated_at = _utc_now()
+                recovered_job_ids.append(job.id)
+
+                rows = (
+                    db.query(PublishPlatformStatus)
+                    .filter(PublishPlatformStatus.job_id == job.id)
+                    .all()
+                )
+                for row in rows:
+                    if row.status not in TERMINAL_PLATFORM_STATUSES:
+                        row.status = "error"
+                        row.error = reason
+                        row.updated_at = _utc_now()
+
+                self._add_event(
+                    db,
+                    job.id,
+                    "job_recovered_as_error",
+                    reason,
+                    {"max_age_minutes": max_age_minutes},
+                )
+            db.commit()
+            return recovered_job_ids
+        finally:
+            db.close()
+
+    def _add_event(
+        self,
+        db,
+        task_id: str,
+        event_type: str,
+        message: str,
+        payload: dict[str, Any] | None = None,
+    ):
+        db.add(
+            PublishJobEvent(
+                job_id=task_id,
+                type=event_type,
+                message=message,
+                payload_json=_dumps_json(payload or {}),
+                created_at=_utc_now(),
+            )
+        )
 
     def _set_memory_task(self, task_id: str, platforms: List[str], created_at: datetime | None = None):
         platform_statuses = {
@@ -239,9 +475,9 @@ class TaskManager:
             job.status = status
             job.video_path = request.video_path
             job.caption = request.caption
-            job.accounts_json = json.dumps(accounts, ensure_ascii=False)
+            job.accounts_json = _dumps_json(accounts)
             job.youtube_title = request.youtube_title
-            job.youtube_tags_json = json.dumps(youtube_tags or [], ensure_ascii=False)
+            job.youtube_tags_json = _dumps_json(youtube_tags or [])
             job.youtube_privacy = request.youtube_privacy
             job.instagram_format = request.instagram_format
             job.scheduled_at = _to_utc_naive(request.scheduled_at)
@@ -267,6 +503,13 @@ class TaskManager:
                 existing.error = None
                 existing.updated_at = now
 
+            self._add_event(
+                db,
+                task_id,
+                "job_created",
+                "Job criado.",
+                {"mode": mode, "status": status},
+            )
             db.commit()
         finally:
             db.close()
@@ -327,10 +570,30 @@ class TaskManager:
 
             job = db.query(PublishJob).filter(PublishJob.id == task_id).first()
             if job:
+                if job.status == "canceled" and status != "canceled":
+                    return
                 if status == "uploading" and job.status == "queued":
                     job.status = "running"
                     job.started_at = job.started_at or now
+                    self._add_event(
+                        db,
+                        task_id,
+                        "job_running",
+                        "Job marcado como em execução.",
+                    )
                 job.updated_at = now
+                self._add_event(
+                    db,
+                    task_id,
+                    "platform_status",
+                    f"{platform}: {status}",
+                    {
+                        "platform": platform,
+                        "status": status,
+                        "progress": progress,
+                        "error": error,
+                    },
+                )
 
                 rows = (
                     db.query(PublishPlatformStatus)
@@ -344,6 +607,12 @@ class TaskManager:
                     job.error = "; ".join(
                         f"{item.platform}: {item.error}" for item in failed if item.error
                     ) or None
+                    self._add_event(
+                        db,
+                        task_id,
+                        "job_error" if failed else "job_success",
+                        job.error or "Job concluído com sucesso.",
+                    )
 
             db.commit()
         finally:
@@ -367,6 +636,12 @@ class TaskManager:
             db.query(PublishPlatformStatus)
             .filter(PublishPlatformStatus.job_id == job.id)
             .order_by(PublishPlatformStatus.platform.asc())
+            .all()
+        )
+        events = (
+            db.query(PublishJobEvent)
+            .filter(PublishJobEvent.job_id == job.id)
+            .order_by(PublishJobEvent.created_at.asc())
             .all()
         )
         payload = {
@@ -397,6 +672,17 @@ class TaskManager:
                     "updated_at": row.updated_at,
                 }
                 for row in platforms
+            ],
+            "events": [
+                {
+                    "id": event.id,
+                    "job_id": event.job_id,
+                    "type": event.type,
+                    "message": event.message,
+                    "payload": _loads_json(event.payload_json, {}),
+                    "created_at": event.created_at,
+                }
+                for event in events
             ],
         }
         return _model_dump(PublishJobResponse(**payload))
