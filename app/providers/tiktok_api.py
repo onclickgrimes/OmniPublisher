@@ -11,6 +11,9 @@ from app.services.session_manager import session_manager
 
 import concurrent.futures
 
+from app.config import TIKTOK_BROWSER
+from app.services.browser_detector import get_chrome_status
+
 try:
     # pyrefly: ignore [missing-import]
     import tiktok_uploader.upload as tiktok_up
@@ -61,6 +64,52 @@ def _remove_tiktok_upload_overlays(page):
         pass
 
 
+def _chrome_path_browser_launcher(chrome_path: str, fallback_get_browser):
+    def _get_browser(name="chrome", headless=False, proxy=None, *args, **kwargs):
+        if name != "chrome":
+            return fallback_get_browser(name, headless=headless, proxy=proxy, *args, **kwargs)
+
+        # pyrefly: ignore [missing-import]
+        from playwright.sync_api import sync_playwright
+        # pyrefly: ignore [missing-import]
+        from tiktok_uploader import config
+
+        playwright = sync_playwright().start()
+        launch_args = {
+            "executable_path": chrome_path,
+            "headless": headless,
+            "args": [
+                "--disable-blink-features=AutomationControlled",
+            ],
+        }
+
+        if proxy:
+            launch_args["proxy"] = {
+                "server": f"{proxy['host']}:{proxy['port']}",
+            }
+            if "user" in proxy and "password" in proxy:
+                launch_args["proxy"]["username"] = proxy["user"]
+                launch_args["proxy"]["password"] = proxy["password"]
+
+        browser = playwright.chromium.launch(**launch_args)
+        context = browser.new_context(
+            viewport={"width": 1280, "height": 720},
+            user_agent=config.disguising.user_agent,
+            locale="en-US",
+        )
+        context.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+        """)
+
+        page = context.new_page()
+        page.set_default_timeout(config.implicit_wait * 1000)
+        return page
+
+    return _get_browser
+
+
 def _run_tiktok_upload(video_path: str, caption: str, session_id: str):
     # pyrefly: ignore [missing-import]
     import tiktok_uploader.upload as tiktok_up
@@ -69,12 +118,20 @@ def _run_tiktok_upload(video_path: str, caption: str, session_id: str):
     
     # --- MONKEY PATCH PARA REMOVER MODAIS DO TIKTOK ---
     original_remove_split_window = tiktok_up._remove_split_window
+    original_get_browser = tiktok_up.get_browser
     
     def _patched_remove_split_window(page):
         _remove_tiktok_upload_overlays(page)
         return original_remove_split_window(page)
         
     tiktok_up._remove_split_window = _patched_remove_split_window
+
+    chrome_status = get_chrome_status() if TIKTOK_BROWSER == "chrome" else None
+    if chrome_status and chrome_status.get("executablePath"):
+        tiktok_up.get_browser = _chrome_path_browser_launcher(
+            chrome_status["executablePath"],
+            original_get_browser,
+        )
     # --------------------------------------------------
 
     cookies_list = [
@@ -100,6 +157,7 @@ def _run_tiktok_upload(video_path: str, caption: str, session_id: str):
                 video_path,
                 description=caption,
                 cookies_list=cookies_list,
+                browser=TIKTOK_BROWSER,
             )
     except Exception as exc:
         diagnostics = _split_diagnostic_lines(
@@ -119,6 +177,7 @@ def _run_tiktok_upload(video_path: str, caption: str, session_id: str):
     finally:
         config.quit_on_end = previous_quit_on_end
         tiktok_up._remove_split_window = original_remove_split_window
+        tiktok_up.get_browser = original_get_browser
         tiktok_up.logger.removeHandler(log_handler)
 
     diagnostics = _split_diagnostic_lines(
@@ -219,6 +278,11 @@ class TikTokProvider(BaseProvider):
         if not TIKTOK_MODULE_LOADED:
             raise Exception("Módulo tiktok_uploader não encontrado.")
 
+        if TIKTOK_BROWSER == "chrome":
+            chrome_status = get_chrome_status()
+            if not chrome_status["available"]:
+                raise RuntimeError(chrome_status["message"])
+
         if not account_id:
             raise ValueError("account_id é obrigatório para o TikTokProvider.")
 
@@ -243,7 +307,7 @@ class TikTokProvider(BaseProvider):
                     pool, _run_tiktok_upload, video_path, caption, session_id
                 )
         except Exception as e:
-            raise Exception(f"Falha ao executar o selenium do TikTok: {str(e)}")
+            raise Exception(f"Falha ao executar o navegador do TikTok: {str(e)}")
 
         warnings = _validate_tiktok_upload_result(result)
 

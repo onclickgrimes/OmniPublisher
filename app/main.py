@@ -3,11 +3,13 @@ from fastapi import FastAPI
 # pyrefly: ignore [missing-import]
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.models.schemas import RuntimeBrowserStatusResponse
 from app.routes import publish, tasks, accounts, workspaces
 from app.services.session_manager import session_manager
 from app.services.scheduler import scheduler
 from app.services.task_manager import task_manager
 from app.services.workspace_bootstrap import ensure_default_workspace
+from app.services.browser_detector import get_chrome_status
 from app.models.db import engine, Base, ensure_database_schema
 from app.config import (
     APP_NAME,
@@ -21,6 +23,8 @@ from app.config import (
     RUNNING_JOB_STALE_MINUTES,
     SCHEDULER_INTERVAL_SECONDS,
     SESSIONS_DIR,
+    TIKTOK_BROWSER,
+    TIKTOK_CHROME_PATH,
     YOUTUBE_CLIENT_SECRETS_FILE,
     YOUTUBE_OAUTH_PORT,
 )
@@ -104,7 +108,23 @@ def runtime():
         "schedulerIntervalSeconds": SCHEDULER_INTERVAL_SECONDS,
         "runningJobStaleMinutes": RUNNING_JOB_STALE_MINUTES,
         "accountStatusCacheTtlSeconds": ACCOUNT_STATUS_CACHE_TTL_SECONDS,
+        "tiktokBrowser": TIKTOK_BROWSER,
+        "tiktokChromePath": TIKTOK_CHROME_PATH,
     }
+
+
+@app.get("/runtime/browser-status", response_model=RuntimeBrowserStatusResponse)
+def runtime_browser_status():
+    chrome_status = get_chrome_status()
+    return {
+        "tiktok": {
+            "usesSystemBrowser": TIKTOK_BROWSER == "chrome",
+            "requiredBrowser": TIKTOK_BROWSER,
+            "chrome": chrome_status,
+            "ready": TIKTOK_BROWSER != "chrome" or chrome_status["available"],
+        }
+    }
+
 
 @app.get("/")
 def read_root():

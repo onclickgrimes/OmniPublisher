@@ -69,6 +69,10 @@ INSTAGRAM_USERNAME = os.getenv("INSTAGRAM_USERNAME")
 INSTAGRAM_PASSWORD = os.getenv("INSTAGRAM_PASSWORD")
 INSTAGRAM_SETTINGS_FILE = SESSIONS_DIR / "instagram_settings.json"
 
+# Configurações do TikTok
+TIKTOK_BROWSER = os.getenv("TIKTOK_BROWSER", "chrome")
+TIKTOK_CHROME_PATH = os.getenv("TIKTOK_CHROME_PATH")
+
 # Outras configurações
 TIMEOUT_SECONDS = int(os.getenv("TIMEOUT_SECONDS", "300"))  # 5 minutos por padrão
 SCHEDULER_INTERVAL_SECONDS = _env_int("SCHEDULER_INTERVAL_SECONDS", 30)

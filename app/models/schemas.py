@@ -38,6 +38,12 @@ class AccountCreate(BaseModel):
                     "identifier": "email@exemplo.com",
                     "credentials": None,
                 },
+                {
+                    "platform": "instagram",
+                    "name": "Instagram Principal",
+                    "identifier": "usuario_instagram",
+                    "credentials": "SENHA_DO_INSTAGRAM",
+                },
             ]
         }
 
@@ -80,6 +86,21 @@ class AccountStatusResponse(BaseModel):
     expires_at: datetime
     cached: bool = False
 
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "account_id": "account-id-tiktok",
+                "platform": "tiktok",
+                "name": "TikTok Principal",
+                "identifier": "@minha_conta",
+                "status": "connected",
+                "message": "Session ID do TikTok cadastrado. A validação web completa ocorre no publish.",
+                "checked_at": "2026-06-24T00:16:54.389039",
+                "expires_at": "2026-06-24T00:26:54.389039",
+                "cached": True,
+            }
+        }
+
 
 # --- Pydantic Models para Workspaces ---
 
@@ -103,6 +124,15 @@ class WorkspaceUpdate(BaseModel):
     slug: Optional[str] = Field(None, min_length=1, description="Novo identificador legível.")
     description: Optional[str] = Field(None, description="Nova descrição opcional.")
 
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "name": "Marketing Pessoal",
+                "slug": "marketing-pessoal",
+                "description": "Workspace para conteúdo de marketing pessoal.",
+            }
+        }
+
 
 class WorkspaceResponse(BaseModel):
     id: str
@@ -121,6 +151,15 @@ class WorkspaceAccountAttach(BaseModel):
     label: Optional[str] = Field(None, description="Rótulo opcional da conta neste workspace.")
     is_default: bool = Field(False, description="Marca a conta como padrão dentro do workspace.")
 
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "account_id": "account-id-tiktok",
+                "label": "TikTok Principal",
+                "is_default": True,
+            }
+        }
+
 
 class WorkspaceAccountResponse(BaseModel):
     id: str
@@ -133,10 +172,45 @@ class WorkspaceAccountResponse(BaseModel):
     is_default: bool
     created_at: datetime
 
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "id": "workspace-account-link-id",
+                "workspace_id": "workspace-id-default",
+                "account_id": "account-id-tiktok",
+                "platform": "tiktok",
+                "name": "TikTok Principal",
+                "identifier": "@minha_conta",
+                "label": "TikTok Principal",
+                "is_default": True,
+                "created_at": "2026-06-24T00:17:30.144028",
+            }
+        }
+
 
 class WorkspaceAccountsStatusResponse(BaseModel):
     workspace_id: str
     accounts: List[AccountStatusResponse] = Field(default_factory=list)
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "workspace_id": "workspace-id-default",
+                "accounts": [
+                    {
+                        "account_id": "account-id-tiktok",
+                        "platform": "tiktok",
+                        "name": "TikTok Principal",
+                        "identifier": "@minha_conta",
+                        "status": "connected",
+                        "message": "Session ID do TikTok cadastrado. A validação web completa ocorre no publish.",
+                        "checked_at": "2026-06-24T00:16:54.389039",
+                        "expires_at": "2026-06-24T00:26:54.389039",
+                        "cached": True,
+                    }
+                ],
+            }
+        }
 
 
 class WorkspaceOverviewResponse(BaseModel):
@@ -144,6 +218,94 @@ class WorkspaceOverviewResponse(BaseModel):
     accounts: List[WorkspaceAccountResponse] = Field(default_factory=list)
     account_statuses: List[AccountStatusResponse] = Field(default_factory=list)
     task_counts: Dict[str, int] = Field(default_factory=dict)
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "workspace": {
+                    "id": "workspace-id-default",
+                    "name": "Default",
+                    "slug": "default",
+                    "description": "Workspace padrão criado automaticamente.",
+                    "created_at": "2026-06-24T00:05:09.621848",
+                    "updated_at": "2026-06-24T00:05:09.621848",
+                },
+                "accounts": [
+                    {
+                        "id": "workspace-account-link-id",
+                        "workspace_id": "workspace-id-default",
+                        "account_id": "account-id-tiktok",
+                        "platform": "tiktok",
+                        "name": "TikTok Principal",
+                        "identifier": "@minha_conta",
+                        "label": "TikTok Principal",
+                        "is_default": True,
+                        "created_at": "2026-06-24T00:17:30.144028",
+                    }
+                ],
+                "account_statuses": [
+                    {
+                        "account_id": "account-id-tiktok",
+                        "platform": "tiktok",
+                        "name": "TikTok Principal",
+                        "identifier": "@minha_conta",
+                        "status": "connected",
+                        "message": "Session ID do TikTok cadastrado. A validação web completa ocorre no publish.",
+                        "checked_at": "2026-06-24T00:16:54.389039",
+                        "expires_at": "2026-06-24T00:26:54.389039",
+                        "cached": True,
+                    }
+                ],
+                "task_counts": {
+                    "queued": 0,
+                    "running": 0,
+                    "success": 0,
+                    "error": 0,
+                    "canceled": 0,
+                },
+            }
+        }
+
+
+# --- Pydantic Models para runtime ---
+
+class ChromeBrowserStatus(BaseModel):
+    browser: str
+    available: bool
+    source: Optional[str] = None
+    executablePath: Optional[str] = None
+    version: Optional[str] = None
+    message: str
+
+
+class TikTokBrowserStatus(BaseModel):
+    usesSystemBrowser: bool
+    requiredBrowser: str
+    chrome: ChromeBrowserStatus
+    ready: bool
+
+
+class RuntimeBrowserStatusResponse(BaseModel):
+    tiktok: TikTokBrowserStatus
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "tiktok": {
+                    "usesSystemBrowser": True,
+                    "requiredBrowser": "chrome",
+                    "chrome": {
+                        "browser": "chrome",
+                        "available": True,
+                        "source": "registry",
+                        "executablePath": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+                        "version": "150.0.7871.24",
+                        "message": "Google Chrome encontrado.",
+                    },
+                    "ready": True,
+                }
+            }
+        }
 
 # --- Pydantic Models para Publicação ---
 
@@ -188,13 +350,13 @@ class PublishRequest(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "workspace_id": "uuid-do-workspace",
+                "workspace_id": "workspace-id-default",
                 "mode": "immediate",
                 "video_path": "C:/Projetos-NestJS/OmniPublisher/1-1.mp4",
                 "thumb_path": "C:/Projetos-NestJS/OmniPublisher/1-1.mp4.jpg",
                 "caption": "Publicacao via OmniPublisher! #ola",
                 "accounts": {
-                    "tiktok": "a1f4f6fd-0974-4556-b88d-b2327a478170",
+                    "tiktok": "account-id-tiktok",
                 },
                 "youtube_title": "Titulo do video",
                 "youtube_tags": ["automacao", "video"],
@@ -209,6 +371,16 @@ class PlatformStatus(BaseModel):
     progress: int = 0
     error: Optional[str] = None
 
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "platform": "tiktok",
+                "status": "uploading",
+                "progress": 50,
+                "error": None,
+            }
+        }
+
 class TaskState(BaseModel):
     task_id: str
     platforms: Dict[str, PlatformStatus]
@@ -222,6 +394,18 @@ class PublishResponse(BaseModel):
     mode: Optional[PublishMode] = None
     scheduled_at: Optional[datetime] = None
 
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "task_id": "publish-job-id",
+                "status": "queued",
+                "message": "Upload agendado. O scheduler interno disparará a publicação no horário configurado.",
+                "workspace_id": "workspace-id-default",
+                "mode": "scheduled",
+                "scheduled_at": "2030-01-01T15:00:00",
+            }
+        }
+
 
 class PublishPlatformStatusResponse(BaseModel):
     platform: str
@@ -231,6 +415,18 @@ class PublishPlatformStatusResponse(BaseModel):
     error: Optional[str] = None
     updated_at: datetime
 
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "platform": "tiktok",
+                "account_id": "account-id-tiktok",
+                "status": "pending",
+                "progress": 0,
+                "error": None,
+                "updated_at": "2026-06-24T00:17:49.908659",
+            }
+        }
+
 
 class PublishJobEventResponse(BaseModel):
     id: str
@@ -239,6 +435,21 @@ class PublishJobEventResponse(BaseModel):
     message: str
     payload: Optional[dict] = None
     created_at: datetime
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "id": "publish-job-event-id",
+                "job_id": "publish-job-id",
+                "type": "job_created",
+                "message": "Job criado.",
+                "payload": {
+                    "mode": "scheduled",
+                    "status": "queued",
+                },
+                "created_at": "2026-06-24T00:17:49.914668",
+            }
+        }
 
 
 class PublishJobResponse(BaseModel):
@@ -263,3 +474,53 @@ class PublishJobResponse(BaseModel):
     error: Optional[str] = None
     platforms: List[PublishPlatformStatusResponse] = Field(default_factory=list)
     events: List[PublishJobEventResponse] = Field(default_factory=list)
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "id": "publish-job-id",
+                "task_id": "publish-job-id",
+                "workspace_id": "workspace-id-default",
+                "mode": "scheduled",
+                "status": "queued",
+                "video_path": "C:/Projetos-NestJS/OmniPublisher/1-1.mp4",
+                "thumb_path": None,
+                "caption": "Publicacao via OmniPublisher! #teste",
+                "accounts": {
+                    "tiktok": "account-id-tiktok",
+                },
+                "youtube_title": None,
+                "youtube_tags": [],
+                "youtube_privacy": "public",
+                "instagram_format": "reels",
+                "scheduled_at": "2030-01-01T15:00:00",
+                "created_at": "2026-06-24T00:17:49.908659",
+                "updated_at": "2026-06-24T00:17:49.908659",
+                "started_at": None,
+                "finished_at": None,
+                "error": None,
+                "platforms": [
+                    {
+                        "platform": "tiktok",
+                        "account_id": "account-id-tiktok",
+                        "status": "pending",
+                        "progress": 0,
+                        "error": None,
+                        "updated_at": "2026-06-24T00:17:49.908659",
+                    }
+                ],
+                "events": [
+                    {
+                        "id": "publish-job-event-id",
+                        "job_id": "publish-job-id",
+                        "type": "job_created",
+                        "message": "Job criado.",
+                        "payload": {
+                            "mode": "scheduled",
+                            "status": "queued",
+                        },
+                        "created_at": "2026-06-24T00:17:49.914668",
+                    }
+                ],
+            }
+        }
