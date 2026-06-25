@@ -1,10 +1,19 @@
 import json
 import asyncio
-from fastapi import APIRouter, HTTPException
+from uuid import uuid4
+
+# pyrefly: ignore [missing-import]
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+# pyrefly: ignore [missing-import]
 from fastapi.responses import StreamingResponse
 from typing import List
+# pyrefly: ignore [missing-import]
+from sqlalchemy.orm import Session
 
-from app.models.schemas import PublishJobResponse
+from app.models.db import get_db
+from app.models.schemas import PublishJobResponse, PublishRequest, PublishResponse, RetryPlatformResponse
+from app.routes.publish import SUPPORTED_PLATFORMS, _validate_publish_request
+from app.services.orchestrator import orchestrator
 from app.services.task_manager import task_manager
 
 router = APIRouter()
@@ -45,6 +54,106 @@ async def cancel_task(task_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Task ID não encontrado.")
     return job
+
+
+@router.post("/tasks/{task_id}/platforms/{platform}/retry", response_model=RetryPlatformResponse)
+async def retry_task_platform(
+    task_id: str,
+    platform: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """
+    Cria um novo job imediato para reenviar apenas uma plataforma que falhou/cancelou.
+    """
+    normalized_platform = str(platform or "").strip().lower()
+    if normalized_platform not in SUPPORTED_PLATFORMS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Plataforma '{platform}' não suportada.",
+        )
+
+    job = task_manager.get_job(task_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Task ID não encontrado.")
+
+    platform_statuses = job.get("platforms") or []
+    platform_status = next(
+        (
+            item for item in platform_statuses
+            if str(item.get("platform") or "").strip().lower() == normalized_platform
+        ),
+        None,
+    )
+    if not platform_status:
+        raise HTTPException(
+            status_code=400,
+            detail=f"A plataforma '{normalized_platform}' não existe na task '{task_id}'.",
+        )
+
+    current_status = str(platform_status.get("status") or "").strip().lower()
+    if current_status not in {"error", "canceled"}:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Retry permitido apenas para plataforma com erro ou cancelada. "
+                f"Status atual de '{normalized_platform}': {current_status or 'desconhecido'}."
+            ),
+        )
+
+    accounts = job.get("accounts") or {}
+    account_id = str(accounts.get(normalized_platform) or platform_status.get("account_id") or "").strip()
+    if not account_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Não foi possível identificar a conta usada em '{normalized_platform}'.",
+        )
+
+    retry_request = PublishRequest(
+        workspace_id=job.get("workspace_id"),
+        mode="immediate",
+        scheduled_at=None,
+        video_path=job.get("video_path"),
+        thumb_path=job.get("thumb_path"),
+        caption=job.get("caption"),
+        accounts={normalized_platform: account_id},
+        youtube_title=job.get("youtube_title"),
+        youtube_tags=job.get("youtube_tags") or [],
+        youtube_privacy=job.get("youtube_privacy") or "public",
+        instagram_format=job.get("instagram_format") or "reels",
+    )
+    _validate_publish_request(retry_request, db)
+
+    retry_task_id = str(uuid4())
+    task_manager.create_task(
+        retry_task_id,
+        [normalized_platform],
+        request=retry_request,
+        mode=retry_request.mode,
+        status="queued",
+    )
+    background_tasks.add_task(orchestrator.execute, retry_task_id, retry_request)
+
+    message = f"Retry iniciado para {normalized_platform}. Acompanhe pelo endpoint SSE."
+    retry_response = PublishResponse(
+        task_id=retry_task_id,
+        status="accepted",
+        message=message,
+        workspace_id=retry_request.workspace_id,
+        mode=retry_request.mode,
+        scheduled_at=None,
+    )
+    retry_payload = (
+        retry_response.model_dump()
+        if hasattr(retry_response, "model_dump")
+        else retry_response.dict()
+    )
+    return RetryPlatformResponse(
+        source_task_id=task_id,
+        platform=normalized_platform,
+        retry_task=retry_response,
+        **retry_payload,
+    )
 
 
 @router.get("/tasks/{task_id}/stream")

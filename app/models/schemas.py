@@ -407,6 +407,34 @@ class PublishResponse(BaseModel):
         }
 
 
+class RetryPlatformResponse(PublishResponse):
+    source_task_id: str
+    platform: PlatformName
+    retry_task: PublishResponse
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "source_task_id": "publish-job-id-original",
+                "platform": "tiktok",
+                "task_id": "publish-job-id-retry",
+                "status": "accepted",
+                "message": "Retry iniciado para tiktok. Acompanhe pelo endpoint SSE.",
+                "workspace_id": "workspace-id-default",
+                "mode": "immediate",
+                "scheduled_at": None,
+                "retry_task": {
+                    "task_id": "publish-job-id-retry",
+                    "status": "accepted",
+                    "message": "Retry iniciado para tiktok. Acompanhe pelo endpoint SSE.",
+                    "workspace_id": "workspace-id-default",
+                    "mode": "immediate",
+                    "scheduled_at": None,
+                },
+            }
+        }
+
+
 class PublishPlatformStatusResponse(BaseModel):
     platform: str
     account_id: str
