@@ -26,3 +26,6 @@ client_secret.json
 
 # Build
 build/
+
+#Captura de thumbnails
+captured-thumbnails/
