@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# pyrefly: ignore [missing-import]
 import uvicorn
 
 from app.config import OMNIPUBLISHER_HOST, OMNIPUBLISHER_PORT
