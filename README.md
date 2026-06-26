@@ -5,7 +5,8 @@ Motor centralizado de postagem omnichannel via REST API (FastAPI) que distribui 
 ## Requisitos
 
 - Python 3.10+
-- Chrome/Chromium instalado na máquina (Necessário para o Selenium no TikTok)
+- Google Chrome instalado na máquina para o TikTok
+- Node.js ou Electron externo para o driver do Playwright usado pelo TikTok
 
 ## Configuração do Projeto
 
@@ -29,12 +30,11 @@ Motor centralizado de postagem omnichannel via REST API (FastAPI) que distribui 
    - Crie credenciais OAuth 2.0 (Tipo: Aplicativo de Computador).
    - Baixe o JSON gerado e salve na raiz do projeto com o nome `client_secret.json`.
 
-4. **Configuração do TikTok (Módulo Local):**
-   - O projeto espera o repositório `TiktokAutoUploader` na pasta local `tiktok_uploader/`.
-   - Baixe manualmente ou faça clone do repositório:
-     ```bash
-     git clone https://github.com/makiisthenes/TiktokAutoUploader.git tiktok_uploader
-     ```
+4. **Configuração do TikTok:**
+   - O TikTok usa `tiktok-uploader` + Playwright Python.
+   - O browser usado é o Google Chrome instalado na máquina (`TIKTOK_BROWSER=chrome`).
+   - O driver do Playwright deve reaproveitar Node/Electron externo via `PLAYWRIGHT_NODEJS_PATH`.
+     Dentro do Electron do `python-project`, isso é injetado automaticamente.
 
 ## Executando o Servidor
 
@@ -71,10 +71,25 @@ YOUTUBE_OAUTH_PORT=8080
 SCHEDULER_INTERVAL_SECONDS=30
 RUNNING_JOB_STALE_MINUTES=30
 ACCOUNT_STATUS_CACHE_TTL_SECONDS=600
+OMNIPUBLISHER_PLAYWRIGHT_NODE_PATH=C:/Program Files/nodejs/node.exe
 ```
 
 Se `OMNIPUBLISHER_DATA_DIR` não for definido, o comportamento de dev é preservado:
 o banco `omnipublisher.db` e a pasta `sessions/` ficam na raiz do projeto.
+
+## Build do Sidecar
+
+Use sempre:
+
+```powershell
+.\scripts\build_sidecar.ps1
+```
+
+As opções oficiais do Nuitka ficam em `run_omnipublisher.py` e estão detalhadas
+em `BUILD.md`. Não inclua Chromium, `playwright/driver/node.exe`,
+`googleapiclient/discovery_cache/documents`, MoviePy ou `imageio_ffmpeg` no
+sidecar. O YouTube usa `static_discovery=False`, o Instagram exige `thumb_path`,
+e o TikTok reaproveita Node/Electron externo.
 
 ## Como Consumir a Aplicação (Documentação da API)
 
@@ -233,6 +248,9 @@ a conta pertence à plataforma informada.
 Quando `mode` é `scheduled`, o job fica persistido no SQLite com status `queued`.
 O worker interno varre o banco a cada `SCHEDULER_INTERVAL_SECONDS` e dispara jobs
 com `scheduled_at <= now`.
+Prefira enviar `scheduled_at` com offset, como `2026-06-24T14:00:00-03:00`.
+Se o offset for omitido, o backend interpreta o horário usando `OMNIPUBLISHER_TIMEZONE`
+(`America/Sao_Paulo` por padrão) e salva internamente em UTC.
 Quando `workspace_id` é enviado, todas as contas em `accounts` precisam estar
 vinculadas ao workspace informado.
 

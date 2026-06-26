@@ -1,4 +1,5 @@
 import os
+import shutil
 from pathlib import Path
 # pyrefly: ignore [missing-import]
 from dotenv import load_dotenv
@@ -72,6 +73,59 @@ INSTAGRAM_SETTINGS_FILE = SESSIONS_DIR / "instagram_settings.json"
 # Configurações do TikTok
 TIKTOK_BROWSER = os.getenv("TIKTOK_BROWSER", "chrome")
 TIKTOK_CHROME_PATH = os.getenv("TIKTOK_CHROME_PATH")
+OMNIPUBLISHER_PLAYWRIGHT_NODE_PATH = os.getenv("OMNIPUBLISHER_PLAYWRIGHT_NODE_PATH")
+OMNIPUBLISHER_TIMEZONE = os.getenv("OMNIPUBLISHER_TIMEZONE", "America/Sao_Paulo")
+
+
+def _existing_executable(path: str | Path | None) -> str | None:
+    if not path:
+        return None
+    candidate = Path(path).expanduser()
+    try:
+        candidate = candidate.resolve()
+    except OSError:
+        return None
+    return str(candidate) if candidate.is_file() else None
+
+
+def _default_external_node_candidates() -> list[Path]:
+    sibling_python_project = BASE_DIR.parent / "python-project"
+    return [
+        sibling_python_project / "node_modules" / "electron" / "dist" / "electron.exe",
+    ]
+
+
+def resolve_playwright_node_path() -> str | None:
+    explicit = _existing_executable(OMNIPUBLISHER_PLAYWRIGHT_NODE_PATH)
+    if explicit:
+        return explicit
+
+    inherited = _existing_executable(os.getenv("PLAYWRIGHT_NODEJS_PATH"))
+    if inherited:
+        return inherited
+
+    for candidate in _default_external_node_candidates():
+        existing = _existing_executable(candidate)
+        if existing:
+            return existing
+
+    for command in ["node.exe", "node"]:
+        existing = _existing_executable(shutil.which(command))
+        if existing:
+            return existing
+
+    return None
+
+
+def configure_external_playwright_node() -> str | None:
+    node_path = resolve_playwright_node_path()
+    if not node_path:
+        return None
+
+    os.environ.setdefault("PLAYWRIGHT_NODEJS_PATH", node_path)
+    if Path(node_path).name.lower() == "electron.exe":
+        os.environ.setdefault("ELECTRON_RUN_AS_NODE", "1")
+    return node_path
 
 # Outras configurações
 TIMEOUT_SECONDS = int(os.getenv("TIMEOUT_SECONDS", "300"))  # 5 minutos por padrão

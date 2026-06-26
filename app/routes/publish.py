@@ -1,6 +1,6 @@
 import os
 from uuid import uuid4
-from datetime import datetime, timezone
+from datetime import datetime
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -8,6 +8,7 @@ from app.models.db import Account, Workspace, WorkspaceAccount, get_db
 from app.models.schemas import PublishRequest, PublishResponse
 from app.services.task_manager import task_manager
 from app.services.orchestrator import orchestrator
+from app.services.time_utils import to_utc_naive, utc_naive_to_app_aware
 
 router = APIRouter()
 
@@ -15,11 +16,7 @@ SUPPORTED_PLATFORMS = {"youtube", "instagram", "tiktok"}
 
 
 def _to_utc_naive(value: datetime | None) -> datetime | None:
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        return value
-    return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return to_utc_naive(value)
 
 
 def _validate_publish_request(request: PublishRequest, db: Session):
@@ -156,5 +153,5 @@ async def publish_omnichannel(
         message=message,
         workspace_id=request.workspace_id,
         mode=request.mode,
-        scheduled_at=_to_utc_naive(request.scheduled_at),
+        scheduled_at=utc_naive_to_app_aware(_to_utc_naive(request.scheduled_at)),
     )

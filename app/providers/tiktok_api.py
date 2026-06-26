@@ -11,8 +11,10 @@ from app.services.session_manager import session_manager
 
 import concurrent.futures
 
-from app.config import TIKTOK_BROWSER
+from app.config import TIKTOK_BROWSER, configure_external_playwright_node
 from app.services.browser_detector import get_chrome_status
+
+configure_external_playwright_node()
 
 try:
     # pyrefly: ignore [missing-import]

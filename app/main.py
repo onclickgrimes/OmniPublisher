@@ -25,8 +25,10 @@ from app.config import (
     SESSIONS_DIR,
     TIKTOK_BROWSER,
     TIKTOK_CHROME_PATH,
+    OMNIPUBLISHER_TIMEZONE,
     YOUTUBE_CLIENT_SECRETS_FILE,
     YOUTUBE_OAUTH_PORT,
+    resolve_playwright_node_path,
 )
 
 # Cria as tabelas do SQLite no banco (se não existirem)
@@ -108,8 +110,10 @@ def runtime():
         "schedulerIntervalSeconds": SCHEDULER_INTERVAL_SECONDS,
         "runningJobStaleMinutes": RUNNING_JOB_STALE_MINUTES,
         "accountStatusCacheTtlSeconds": ACCOUNT_STATUS_CACHE_TTL_SECONDS,
+        "timezone": OMNIPUBLISHER_TIMEZONE,
         "tiktokBrowser": TIKTOK_BROWSER,
         "tiktokChromePath": TIKTOK_CHROME_PATH,
+        "playwrightNodePath": resolve_playwright_node_path(),
     }
 
 

@@ -42,7 +42,7 @@ class YouTubeProvider(BaseProvider):
 
         # Obtém credenciais para a conta específica
         creds = session_manager.get_youtube_credentials(account_id)
-        youtube = build("youtube", "v3", credentials=creds)
+        youtube = build("youtube", "v3", credentials=creds, static_discovery=False)
 
         body = {
             "snippet": {

@@ -322,7 +322,8 @@ class PublishRequest(BaseModel):
         None,
         description=(
             "Data/hora ISO 8601 para publicações agendadas. Obrigatório quando mode='scheduled'. "
-            "Prefira enviar timezone explícito, por exemplo 2026-06-24T14:00:00-03:00."
+            "Prefira enviar timezone explícito, por exemplo 2026-06-24T14:00:00-03:00. "
+            "Quando o timezone for omitido, o backend interpreta no OMNIPUBLISHER_TIMEZONE."
         ),
     )
     video_path: str = Field(..., description="Caminho absoluto do arquivo de vídeo")
@@ -351,7 +352,8 @@ class PublishRequest(BaseModel):
         json_schema_extra = {
             "example": {
                 "workspace_id": "workspace-id-default",
-                "mode": "immediate",
+                "mode": "scheduled",
+                "scheduled_at": "2030-01-01T15:00:00-03:00",
                 "video_path": "C:/Projetos-NestJS/OmniPublisher/1-1.mp4",
                 "thumb_path": "C:/Projetos-NestJS/OmniPublisher/1-1.mp4.jpg",
                 "caption": "Publicacao via OmniPublisher! #ola",
@@ -402,7 +404,7 @@ class PublishResponse(BaseModel):
                 "message": "Upload agendado. O scheduler interno disparará a publicação no horário configurado.",
                 "workspace_id": "workspace-id-default",
                 "mode": "scheduled",
-                "scheduled_at": "2030-01-01T15:00:00",
+                "scheduled_at": "2030-01-01T15:00:00-03:00",
             }
         }
 
@@ -521,7 +523,7 @@ class PublishJobResponse(BaseModel):
                 "youtube_tags": [],
                 "youtube_privacy": "public",
                 "instagram_format": "reels",
-                "scheduled_at": "2030-01-01T15:00:00",
+                "scheduled_at": "2030-01-01T15:00:00-03:00",
                 "created_at": "2026-06-24T00:17:49.908659",
                 "updated_at": "2026-06-24T00:17:49.908659",
                 "started_at": None,

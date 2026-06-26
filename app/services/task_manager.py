@@ -1,10 +1,11 @@
 import asyncio
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
 from app.models.db import PublishJob, PublishJobEvent, PublishPlatformStatus, SessionLocal
 from app.models.schemas import PlatformStatus, PublishJobResponse, PublishRequest, TaskState
+from app.services.time_utils import to_utc_naive, utc_naive_to_app_aware, utc_now_naive
 
 
 TERMINAL_JOB_STATUSES = {"success", "error", "canceled"}
@@ -18,15 +19,7 @@ def _model_dump(model, **kwargs):
 
 
 def _utc_now() -> datetime:
-    return datetime.utcnow()
-
-
-def _to_utc_naive(value: datetime | None) -> datetime | None:
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        return value
-    return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return utc_now_naive()
 
 
 def _loads_json(value: str | None, fallback: Any):
@@ -273,7 +266,13 @@ class TaskManager:
                     job.id,
                     "scheduled_due",
                     "Job agendado vencido; execução iniciada pelo scheduler.",
-                    {"scheduled_at": job.scheduled_at.isoformat() if job.scheduled_at else None},
+                    {
+                        "scheduled_at": (
+                            utc_naive_to_app_aware(job.scheduled_at).isoformat()
+                            if job.scheduled_at
+                            else None
+                        )
+                    },
                 )
             db.commit()
             return job_ids
@@ -538,7 +537,7 @@ class TaskManager:
             job.youtube_tags_json = _dumps_json(youtube_tags or [])
             job.youtube_privacy = request.youtube_privacy
             job.instagram_format = request.instagram_format
-            job.scheduled_at = _to_utc_naive(request.scheduled_at)
+            job.scheduled_at = to_utc_naive(request.scheduled_at)
             job.updated_at = now
             job.error = None
 
@@ -680,7 +679,7 @@ class TaskManager:
         return PublishRequest(
             mode=job.mode,
             workspace_id=job.workspace_id,
-            scheduled_at=job.scheduled_at,
+            scheduled_at=utc_naive_to_app_aware(job.scheduled_at),
             video_path=job.video_path,
             thumb_path=job.thumb_path,
             caption=job.caption,
@@ -718,7 +717,7 @@ class TaskManager:
             "youtube_tags": _loads_json(job.youtube_tags_json, []),
             "youtube_privacy": job.youtube_privacy,
             "instagram_format": job.instagram_format,
-            "scheduled_at": job.scheduled_at,
+            "scheduled_at": utc_naive_to_app_aware(job.scheduled_at),
             "created_at": job.created_at,
             "updated_at": job.updated_at,
             "started_at": job.started_at,

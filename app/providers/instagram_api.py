@@ -1,25 +1,10 @@
 import asyncio
-from functools import lru_cache
 from pathlib import Path
 from typing import Dict, Any
 
 from app.providers.base import BaseProvider
 from app.services.session_manager import session_manager
 from app.services.task_manager import task_manager
-
-
-@lru_cache(maxsize=1)
-def _instagram_thumbnail_generation_available() -> bool:
-    try:
-        # pyrefly: ignore [missing-import]
-        import moviepy  # noqa: F401
-        # pyrefly: ignore [missing-import]
-        import imageio_ffmpeg
-
-        imageio_ffmpeg.get_ffmpeg_exe()
-        return True
-    except Exception:
-        return False
 
 
 def _thumbnail_from_request(thumb_path: str | None) -> Path | None:
@@ -29,13 +14,10 @@ def _thumbnail_from_request(thumb_path: str | None) -> Path | None:
             raise FileNotFoundError(f"Thumbnail do Instagram não encontrada: {thumb_path}")
         return thumbnail
 
-    if _instagram_thumbnail_generation_available():
-        return None
-
     raise ValueError(
         "thumb_path é obrigatório para publicar no Instagram neste runtime. "
-        "Esta build do OmniPublisher não empacota MoviePy/ffmpeg para gerar "
-        "thumbnail automaticamente; envie uma imagem de capa em thumb_path."
+        "O OmniPublisher não empacota MoviePy/ffmpeg para gerar thumbnail "
+        "automaticamente; envie uma imagem de capa em thumb_path."
     )
 
 
