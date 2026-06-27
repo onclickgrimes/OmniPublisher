@@ -73,6 +73,9 @@ class PublishOrchestrator:
                 "tags": request.youtube_tags,
                 "youtube_privacy": request.youtube_privacy,
                 "instagram_format": request.instagram_format,
+                "instagram_share_to_facebook": request.instagram_share_to_facebook,
+                "instagram_fb_destination_id": request.instagram_fb_destination_id,
+                "instagram_fb_destination_type": request.instagram_fb_destination_type,
                 "thumb_path": request.thumb_path,
             }
 

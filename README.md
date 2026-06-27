@@ -226,7 +226,8 @@ a conta pertence à plataforma informada.
   "youtube_title": "Título Incrível",
   "youtube_tags": ["python", "automacao"],
   "youtube_privacy": "public",
-  "instagram_format": "reels"
+  "instagram_format": "reels",
+  "instagram_share_to_facebook": true
 }
 ```
 
@@ -259,6 +260,30 @@ O backend envia essa imagem como capa/thumbnail nas plataformas suportadas pela
 integração atual: YouTube e Instagram. No TikTok, `thumb_path` é ignorado.
 Se o vídeo for publicado mas a plataforma recusar a capa/thumbnail, o job continua
 como `success` e o detalhe fica registrado como evento `platform_warning`.
+
+Para Reels do Instagram, `instagram_share_to_facebook=true` tenta compartilhar
+também no Facebook/Página vinculada no app Instagram. Isso depende da conta ter
+crosspost configurado na Central de Contas. Quando o preflight de Reels não
+devolve destino, o OmniPublisher tenta usar o `page_id` exposto pelo próprio
+perfil Instagram. Se ainda assim falhar, informe explicitamente:
+
+```json
+{
+  "instagram_format": "reels",
+  "instagram_share_to_facebook": true,
+  "instagram_fb_destination_id": "FACEBOOK_DESTINATION_ID",
+  "instagram_fb_destination_type": "PAGE"
+}
+```
+
+`instagram_fb_destination_type` aceita `PAGE` ou `USER`. O crosspost para
+Facebook só é suportado para `instagram_format: "reels"`.
+
+Para consultar a Página detectada antes de publicar:
+
+```http
+GET /accounts/{account_id}/instagram/facebook-destination
+```
 
 **Exemplo de Resposta (200 OK):**
 ```json

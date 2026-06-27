@@ -10,7 +10,7 @@ from google.oauth2.credentials import Credentials
 
 from app.config import ACCOUNT_STATUS_CACHE_TTL_SECONDS, SESSIONS_DIR
 from app.models.db import Account, AccountStatusCheck, SessionLocal, Workspace, WorkspaceAccount
-from app.services.session_manager import session_manager
+from app.services.session_manager import InstagramAuthChallengeRequired, session_manager
 
 
 def _utc_now() -> datetime:
@@ -61,6 +61,36 @@ def _unknown_status_payload(account: Account, message: str) -> dict[str, Any]:
     }
 
 
+def _instagram_challenge_message(account_id: str, exc: InstagramAuthChallengeRequired) -> str:
+    raw = exc.raw if isinstance(exc.raw, dict) else {}
+    step_name = str(raw.get("step_name") or "")
+    step_data = raw.get("step_data") if isinstance(raw.get("step_data"), dict) else {}
+    code_steps = {
+        "verify_email",
+        "verify_email_code",
+        "verify_phone",
+        "verify_phone_code",
+        "verify_sms",
+        "verify_sms_code",
+        "select_verify_method",
+        "select_contact_point_recovery",
+    }
+    has_contact_choice = any(key in step_data for key in ["email", "phone_number"])
+
+    if step_name in code_steps or has_contact_choice:
+        return (
+            "Instagram pediu verificação por código. Envie o código recebido "
+            f"para POST /accounts/{account_id}/challenge. Detalhe: {exc}"
+        )
+
+    return (
+        "Instagram pediu um checkpoint manual e não disponibilizou etapa de código "
+        "para esta tentativa. Abra o Instagram no app ou navegador em um dispositivo "
+        "confiável, conclua a verificação da conta e depois rode status?refresh=true "
+        f"novamente. Detalhe: {exc}"
+    )
+
+
 class AccountStatusChecker:
     """
     Verifica e cacheia o estado de autenticação das contas.
@@ -85,17 +115,95 @@ class AccountStatusChecker:
 
             result = self._probe_account(account)
             expires_at = now + timedelta(seconds=max(1, ACCOUNT_STATUS_CACHE_TTL_SECONDS))
-            check = AccountStatusCheck(
-                account_id=account.id,
-                status=result["status"],
-                message=result.get("message"),
+            check = self._persist_check(db, account, result, checked_at=now, expires_at=expires_at)
+            return _status_payload(account, check, cached=False)
+        finally:
+            db.close()
+
+    def submit_instagram_challenge(self, account_id: str, code: str) -> dict[str, Any] | None:
+        code = str(code or "").strip()
+        if not code:
+            raise ValueError("Código do Instagram é obrigatório.")
+
+        db = SessionLocal()
+        try:
+            account = db.query(Account).filter(Account.id == account_id).first()
+            if not account:
+                return None
+            if account.platform != "instagram":
+                raise ValueError("A conta informada não é do Instagram.")
+
+            now = _utc_now()
+            try:
+                client = session_manager.get_instagram_client(account.id, challenge_code=code)
+                try:
+                    client.account_info()
+                except TypeError:
+                    pass
+                result = {
+                    "status": "connected",
+                    "message": "Sessão do Instagram válida após verificação.",
+                }
+            except InstagramAuthChallengeRequired as exc:
+                result = {
+                    "status": "challenge_required",
+                    "message": _instagram_challenge_message(account.id, exc),
+                    "raw": exc.raw,
+                }
+            except Exception as exc:
+                result = {
+                    "status": "needs_auth",
+                    "message": f"Falha ao concluir verificação do Instagram: {exc}",
+                }
+
+            check = self._persist_check(
+                db,
+                account,
+                result,
                 checked_at=now,
-                expires_at=expires_at,
-                raw_json=_dumps_json(result.get("raw") or {}),
+                expires_at=now + timedelta(seconds=max(1, ACCOUNT_STATUS_CACHE_TTL_SECONDS)),
             )
-            db.add(check)
-            db.commit()
-            db.refresh(check)
+            return _status_payload(account, check, cached=False)
+        finally:
+            db.close()
+
+    def submit_instagram_sessionid(self, account_id: str, sessionid: str) -> dict[str, Any] | None:
+        sessionid = str(sessionid or "").strip()
+        if not sessionid:
+            raise ValueError("Cookie sessionid do Instagram é obrigatório.")
+
+        db = SessionLocal()
+        try:
+            account = db.query(Account).filter(Account.id == account_id).first()
+            if not account:
+                return None
+            if account.platform != "instagram":
+                raise ValueError("A conta informada não é do Instagram.")
+
+            now = _utc_now()
+            try:
+                client = session_manager.set_instagram_sessionid(account.id, sessionid)
+                try:
+                    client.account_info()
+                except TypeError:
+                    pass
+                result = {
+                    "status": "connected",
+                    "message": "Sessão do Instagram importada via cookie sessionid.",
+                }
+            except Exception as exc:
+                result = {
+                    "status": "needs_auth",
+                    "message": f"Falha ao importar sessionid do Instagram: {exc}",
+                }
+
+            check = self._persist_check(
+                db,
+                account,
+                result,
+                checked_at=now,
+                expires_at=now + timedelta(seconds=max(1, ACCOUNT_STATUS_CACHE_TTL_SECONDS)),
+            )
             return _status_payload(account, check, cached=False)
         finally:
             db.close()
@@ -306,6 +414,12 @@ class AccountStatusChecker:
                 "status": "connected",
                 "message": "Sessão do Instagram válida.",
             }
+        except InstagramAuthChallengeRequired as exc:
+            return {
+                "status": "challenge_required",
+                "message": _instagram_challenge_message(account.id, exc),
+                "raw": exc.raw,
+            }
         except Exception as exc:
             return {
                 "status": "needs_auth",
@@ -332,6 +446,28 @@ class AccountStatusChecker:
             "status": "connected",
             "message": "Session ID do TikTok cadastrado. A validação web completa ocorre no publish.",
         }
+
+    def _persist_check(
+        self,
+        db,
+        account: Account,
+        result: dict[str, Any],
+        *,
+        checked_at: datetime,
+        expires_at: datetime,
+    ) -> AccountStatusCheck:
+        check = AccountStatusCheck(
+            account_id=account.id,
+            status=result["status"],
+            message=result.get("message"),
+            checked_at=checked_at,
+            expires_at=expires_at,
+            raw_json=_dumps_json(result.get("raw") or {}),
+        )
+        db.add(check)
+        db.commit()
+        db.refresh(check)
+        return check
 
 
 account_status_checker = AccountStatusChecker()

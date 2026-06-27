@@ -537,6 +537,9 @@ class TaskManager:
             job.youtube_tags_json = _dumps_json(youtube_tags or [])
             job.youtube_privacy = request.youtube_privacy
             job.instagram_format = request.instagram_format
+            job.instagram_share_to_facebook = request.instagram_share_to_facebook
+            job.instagram_fb_destination_id = request.instagram_fb_destination_id
+            job.instagram_fb_destination_type = request.instagram_fb_destination_type
             job.scheduled_at = to_utc_naive(request.scheduled_at)
             job.updated_at = now
             job.error = None
@@ -688,6 +691,9 @@ class TaskManager:
             youtube_tags=_loads_json(job.youtube_tags_json, []),
             youtube_privacy=job.youtube_privacy,
             instagram_format=job.instagram_format,
+            instagram_share_to_facebook=bool(job.instagram_share_to_facebook),
+            instagram_fb_destination_id=job.instagram_fb_destination_id,
+            instagram_fb_destination_type=job.instagram_fb_destination_type,
         )
 
     def _job_to_dict(self, db, job: PublishJob) -> dict[str, Any]:
@@ -717,6 +723,9 @@ class TaskManager:
             "youtube_tags": _loads_json(job.youtube_tags_json, []),
             "youtube_privacy": job.youtube_privacy,
             "instagram_format": job.instagram_format,
+            "instagram_share_to_facebook": bool(job.instagram_share_to_facebook),
+            "instagram_fb_destination_id": job.instagram_fb_destination_id,
+            "instagram_fb_destination_type": job.instagram_fb_destination_type,
             "scheduled_at": utc_naive_to_app_aware(job.scheduled_at),
             "created_at": job.created_at,
             "updated_at": job.updated_at,

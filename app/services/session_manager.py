@@ -1,5 +1,6 @@
 import os
 import json
+from http.cookies import SimpleCookie
 # pyrefly: ignore [missing-import]
 from google.oauth2.credentials import Credentials
 # pyrefly: ignore [missing-import]
@@ -8,10 +9,37 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 # pyrefly: ignore [missing-import]
 from instagrapi import Client
-from typing import Dict
+# pyrefly: ignore [missing-import]
+from instagrapi.exceptions import ChallengeRequired, TwoFactorRequired
+from typing import Any, Dict
 
 from app.config import SESSIONS_DIR, YOUTUBE_CLIENT_SECRETS_FILE, YOUTUBE_OAUTH_PORT
 from app.models.db import SessionLocal, Account
+
+
+class InstagramAuthChallengeRequired(Exception):
+    def __init__(self, message: str, *, raw: dict[str, Any] | None = None):
+        super().__init__(message)
+        self.raw = raw or {}
+
+
+def _extract_cookie_value(value: str, cookie_name: str) -> str:
+    value = str(value or "").strip()
+    if not value:
+        return ""
+    if f"{cookie_name}=" not in value:
+        return value
+
+    cookies = SimpleCookie()
+    cookies.load(value)
+    morsel = cookies.get(cookie_name)
+    return morsel.value.strip() if morsel else ""
+
+
+def _looks_like_instagram_sessionid(value: str) -> bool:
+    normalized = _extract_cookie_value(value, "sessionid")
+    return "sessionid=" in str(value or "") or "%3A" in normalized or normalized.count(":") >= 2
+
 
 class SessionManager:
     """
@@ -22,6 +50,7 @@ class SessionManager:
         self.youtube_scopes = ["https://www.googleapis.com/auth/youtube.upload"]
         # Cache em memória para instâncias do instagrapi por conta
         self.instagram_clients: Dict[str, Client] = {}
+        self.instagram_pending_clients: Dict[str, Client] = {}
 
     def get_account(self, account_id: str) -> Account:
         db = SessionLocal()
@@ -70,8 +99,13 @@ class SessionManager:
         flow = InstalledAppFlow.from_client_secrets_file(YOUTUBE_CLIENT_SECRETS_FILE, self.youtube_scopes)
         return flow.run_local_server(port=YOUTUBE_OAUTH_PORT)
 
-    def get_instagram_client(self, account_id: str) -> Client:
-        if account_id in self.instagram_clients:
+    def clear_instagram_client(self, account_id: str):
+        self.instagram_clients.pop(account_id, None)
+        self.instagram_pending_clients.pop(account_id, None)
+
+    def get_instagram_client(self, account_id: str, *, challenge_code: str | None = None) -> Client:
+        challenge_code = str(challenge_code or "").strip()
+        if account_id in self.instagram_clients and not challenge_code:
             return self.instagram_clients[account_id]
 
         account = self.get_account(account_id)
@@ -81,20 +115,103 @@ class SessionManager:
         if not account.identifier or not account.credentials:
             raise ValueError("Conta do Instagram sem username ou senha cadastrados no DB.")
 
-        settings_file = SESSIONS_DIR / account.settings_file
+        settings_name = account.settings_file or f"instagram_settings_{account.id}.json"
+        settings_file = SESSIONS_DIR / settings_name
+        pending_client = self.instagram_pending_clients.get(account_id)
+
+        def _challenge_code_handler(username: str, choice=None):
+            return challenge_code or None
+
+        def _raise_challenge(client: Client, exc: Exception):
+            try:
+                client.dump_settings(settings_file)
+            except Exception:
+                pass
+            self.instagram_pending_clients[account_id] = client
+            raw = getattr(client, "last_json", None)
+            raise InstagramAuthChallengeRequired(str(exc), raw=raw if isinstance(raw, dict) else {}) from exc
+
+        def _login(client: Client) -> Client:
+            client.challenge_code_handler = _challenge_code_handler
+            try:
+                client.login(
+                    account.identifier,
+                    account.credentials,
+                    verification_code=challenge_code,
+                )
+            except (ChallengeRequired, TwoFactorRequired) as exc:
+                _raise_challenge(client, exc)
+            client.dump_settings(settings_file)
+            self.instagram_pending_clients.pop(account_id, None)
+            self.instagram_clients[account_id] = client
+            return client
+
+        if pending_client is not None:
+            return _login(pending_client)
+
         cl = Client()
-        
-        if os.path.exists(settings_file):
+        if os.path.exists(settings_file) and not challenge_code:
             cl.load_settings(settings_file)
             try:
-                cl.login(account.identifier, account.credentials)
+                try:
+                    cl.account_info()
+                except TypeError:
+                    pass
+                self.instagram_pending_clients.pop(account_id, None)
                 self.instagram_clients[account_id] = cl
                 return cl
             except Exception as e:
+                print(f"Sessão salva do Instagram expirou para {account.name}: {e}. Refazendo login...")
+                if _looks_like_instagram_sessionid(account.credentials):
+                    try:
+                        cl.login_by_sessionid(_extract_cookie_value(account.credentials, "sessionid"))
+                        cl.dump_settings(settings_file)
+                        self.instagram_pending_clients.pop(account_id, None)
+                        self.instagram_clients[account_id] = cl
+                        return cl
+                    except Exception as session_exc:
+                        print(f"Falha ao reutilizar sessionid do Instagram para {account.name}: {session_exc}")
+        elif os.path.exists(settings_file):
+            cl.load_settings(settings_file)
+            try:
+                return _login(cl)
+            except InstagramAuthChallengeRequired:
+                raise
+            except Exception as e:
                 print(f"Sessão do Instagram expirou para {account.name}: {e}. Refazendo login...")
 
-        cl.login(account.identifier, account.credentials)
+        if not challenge_code and _looks_like_instagram_sessionid(account.credentials):
+            cl = Client()
+            cl.login_by_sessionid(_extract_cookie_value(account.credentials, "sessionid"))
+            cl.dump_settings(settings_file)
+            self.instagram_pending_clients.pop(account_id, None)
+            self.instagram_clients[account_id] = cl
+            return cl
+
+        return _login(Client())
+
+    def set_instagram_sessionid(self, account_id: str, sessionid: str) -> Client:
+        account = self.get_account(account_id)
+        if account.platform != "instagram":
+            raise ValueError("ID informado não pertence a uma conta do Instagram.")
+
+        normalized_sessionid = _extract_cookie_value(sessionid, "sessionid")
+        if not normalized_sessionid:
+            raise ValueError("Cookie sessionid do Instagram é obrigatório.")
+
+        settings_name = account.settings_file or f"instagram_settings_{account.id}.json"
+        settings_file = SESSIONS_DIR / settings_name
+
+        cl = Client()
+        if os.path.exists(settings_file):
+            try:
+                cl.load_settings(settings_file)
+            except Exception:
+                cl = Client()
+
+        cl.login_by_sessionid(normalized_sessionid)
         cl.dump_settings(settings_file)
+        self.instagram_pending_clients.pop(account_id, None)
         self.instagram_clients[account_id] = cl
         return cl
 

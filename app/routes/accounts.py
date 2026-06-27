@@ -1,11 +1,23 @@
+# pyrefly: ignore [missing-import]
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+# pyrefly: ignore [missing-import]
 from sqlalchemy.orm import Session
 from typing import List
 
 from app.config import SESSIONS_DIR
 from app.models.db import Account, AccountStatusCheck, Workspace, WorkspaceAccount, get_db
-from app.models.schemas import AccountCreate, AccountResponse, AccountStatusResponse, AccountUpdate
+from app.models.schemas import (
+    AccountChallengeSubmit,
+    AccountCreate,
+    InstagramFacebookDestinationResponse,
+    AccountResponse,
+    AccountStatusResponse,
+    AccountUpdate,
+    InstagramSessionSubmit,
+)
+from app.providers.instagram_api import _facebook_page_destination_from_profile
 from app.services.account_status_checker import account_status_checker
+from app.services.session_manager import session_manager
 
 router = APIRouter()
 
@@ -134,6 +146,87 @@ def refresh_account_status(account_id: str, background_tasks: BackgroundTasks):
     return status
 
 
+@router.post("/{account_id}/challenge", response_model=AccountStatusResponse)
+def submit_account_challenge(account_id: str, payload: AccountChallengeSubmit):
+    """
+    Envia código de verificação solicitado pela plataforma.
+    No momento, usado pelo Instagram quando o login entra em challenge.
+    """
+    try:
+        status = account_status_checker.submit_instagram_challenge(account_id, payload.code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if not status:
+        raise HTTPException(status_code=404, detail="Conta não encontrada.")
+    return status
+
+
+@router.post("/{account_id}/instagram/session", response_model=AccountStatusResponse)
+def submit_instagram_session(account_id: str, payload: InstagramSessionSubmit):
+    """
+    Importa uma sessão web válida do Instagram usando o cookie sessionid.
+    Útil quando o login por senha cai em checkpoint manual sem código.
+    """
+    try:
+        status = account_status_checker.submit_instagram_sessionid(account_id, payload.sessionid)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if not status:
+        raise HTTPException(status_code=404, detail="Conta não encontrada.")
+    return status
+
+
+@router.get("/{account_id}/instagram/facebook-destination", response_model=InstagramFacebookDestinationResponse)
+def get_instagram_facebook_destination(account_id: str, db: Session = Depends(get_db)):
+    """
+    Retorna a Página/Destino Facebook vinculada à conta Instagram, quando disponível.
+    Usado pelo front para mostrar a opção de crosspost em Reels.
+    """
+    account = _get_account_or_404(account_id, db)
+    if account.platform != "instagram":
+        raise HTTPException(status_code=400, detail="A conta informada não é do Instagram.")
+
+    try:
+        client = session_manager.get_instagram_client(account.id)
+        destination_id, destination_type, destination_name = _facebook_page_destination_from_profile(client)
+    except Exception as exc:
+        return {
+            "account_id": account.id,
+            "platform": "instagram",
+            "available": False,
+            "destination_id": None,
+            "destination_type": None,
+            "destination_name": None,
+            "source": None,
+            "message": f"Não foi possível verificar a Página vinculada: {exc}",
+        }
+
+    if not destination_id:
+        return {
+            "account_id": account.id,
+            "platform": "instagram",
+            "available": False,
+            "destination_id": None,
+            "destination_type": None,
+            "destination_name": None,
+            "source": None,
+            "message": "Nenhuma Página Facebook vinculada foi encontrada no perfil Instagram.",
+        }
+
+    return {
+        "account_id": account.id,
+        "platform": "instagram",
+        "available": True,
+        "destination_id": destination_id,
+        "destination_type": destination_type or "PAGE",
+        "destination_name": destination_name,
+        "source": "instagram_profile_page_id",
+        "message": "Página vinculada encontrada no perfil Instagram.",
+    }
+
+
 @router.patch("/{account_id}", response_model=AccountResponse)
 def update_account(account_id: str, updates: AccountUpdate, db: Session = Depends(get_db)):
     """
@@ -149,6 +242,9 @@ def update_account(account_id: str, updates: AccountUpdate, db: Session = Depend
         if field in payload:
             setattr(db_account, field, payload[field])
 
+    if db_account.platform == "instagram":
+        session_manager.clear_instagram_client(db_account.id)
+
     db.commit()
     db.refresh(db_account)
     return db_account
@@ -160,6 +256,8 @@ def delete_account(account_id: str, db: Session = Depends(get_db)):
     Remove uma conta cadastrada e tenta limpar o arquivo de sessão associado.
     """
     db_account = _get_account_or_404(account_id, db)
+    if db_account.platform == "instagram":
+        session_manager.clear_instagram_client(db_account.id)
     _delete_settings_file(db_account)
     db.query(WorkspaceAccount).filter(WorkspaceAccount.account_id == account_id).delete()
     db.query(AccountStatusCheck).filter(AccountStatusCheck.account_id == account_id).delete()

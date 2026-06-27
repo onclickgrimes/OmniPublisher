@@ -1,13 +1,21 @@
 # pyrefly: ignore [missing-import]
 from pydantic import BaseModel, Field
-from typing import Optional, Literal, Dict, List
+from typing import Any, Optional, Literal, Dict, List
 from datetime import datetime
 
 
 PlatformName = Literal["youtube", "instagram", "tiktok"]
 PublishMode = Literal["immediate", "scheduled"]
 JobStatus = Literal["queued", "running", "success", "error", "canceled"]
-AccountConnectionStatus = Literal["connected", "disconnected", "needs_auth", "checking", "error", "unknown"]
+AccountConnectionStatus = Literal[
+    "connected",
+    "disconnected",
+    "needs_auth",
+    "challenge_required",
+    "checking",
+    "error",
+    "unknown",
+]
 
 # --- Pydantic Models para Accounts ---
 
@@ -85,6 +93,7 @@ class AccountStatusResponse(BaseModel):
     checked_at: datetime
     expires_at: datetime
     cached: bool = False
+    raw: Optional[Dict[str, Any]] = None
 
     class Config:
         json_schema_extra = {
@@ -98,6 +107,61 @@ class AccountStatusResponse(BaseModel):
                 "checked_at": "2026-06-24T00:16:54.389039",
                 "expires_at": "2026-06-24T00:26:54.389039",
                 "cached": True,
+                "raw": {},
+            }
+        }
+
+
+class AccountChallengeSubmit(BaseModel):
+    code: str = Field(..., min_length=1, description="Código recebido por email, SMS ou app autenticador.")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "code": "123456",
+            }
+        }
+
+
+class InstagramSessionSubmit(BaseModel):
+    sessionid: str = Field(
+        ...,
+        min_length=20,
+        description=(
+            "Valor do cookie sessionid do Instagram. Também aceita uma string de cookies "
+            "contendo sessionid=..."
+        ),
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "sessionid": "123456789%3Aabcdef...",
+            }
+        }
+
+
+class InstagramFacebookDestinationResponse(BaseModel):
+    account_id: str
+    platform: Literal["instagram"] = "instagram"
+    available: bool
+    destination_id: Optional[str] = None
+    destination_type: Optional[Literal["USER", "PAGE"]] = None
+    destination_name: Optional[str] = None
+    source: Optional[str] = None
+    message: Optional[str] = None
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "account_id": "account-id-instagram",
+                "platform": "instagram",
+                "available": True,
+                "destination_id": "100248175290538",
+                "destination_type": "PAGE",
+                "destination_name": "Aura Real",
+                "source": "instagram_profile_page_id",
+                "message": "Página vinculada encontrada no perfil Instagram.",
             }
         }
 
@@ -347,6 +411,24 @@ class PublishRequest(BaseModel):
     youtube_tags: Optional[List[str]] = Field(None, description="Tags do vídeo no YouTube")
     youtube_privacy: Literal["public", "private", "unlisted"] = Field("public", description="Privacidade do vídeo no YouTube")
     instagram_format: Literal["reels", "feed"] = Field("reels", description="Formato do vídeo no Instagram")
+    instagram_share_to_facebook: bool = Field(
+        False,
+        description=(
+            "Quando true, tenta compartilhar o Reel também no Facebook/Página vinculada "
+            "à conta no app Instagram. Disponível apenas para instagram_format='reels'."
+        ),
+    )
+    instagram_fb_destination_id: Optional[str] = Field(
+        None,
+        description=(
+            "Destino Facebook opcional para crosspost de Reels. Use quando o instagrapi "
+            "não conseguir descobrir automaticamente a Página vinculada."
+        ),
+    )
+    instagram_fb_destination_type: Optional[Literal["USER", "PAGE"]] = Field(
+        None,
+        description="Tipo do destino Facebook quando instagram_fb_destination_id for informado.",
+    )
 
     class Config:
         json_schema_extra = {
@@ -364,6 +446,9 @@ class PublishRequest(BaseModel):
                 "youtube_tags": ["automacao", "video"],
                 "youtube_privacy": "public",
                 "instagram_format": "reels",
+                "instagram_share_to_facebook": True,
+                "instagram_fb_destination_id": None,
+                "instagram_fb_destination_type": None,
             }
         }
 
@@ -496,6 +581,9 @@ class PublishJobResponse(BaseModel):
     youtube_tags: Optional[List[str]] = None
     youtube_privacy: str
     instagram_format: str
+    instagram_share_to_facebook: bool = False
+    instagram_fb_destination_id: Optional[str] = None
+    instagram_fb_destination_type: Optional[str] = None
     scheduled_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
@@ -523,6 +611,9 @@ class PublishJobResponse(BaseModel):
                 "youtube_tags": [],
                 "youtube_privacy": "public",
                 "instagram_format": "reels",
+                "instagram_share_to_facebook": True,
+                "instagram_fb_destination_id": None,
+                "instagram_fb_destination_type": None,
                 "scheduled_at": "2030-01-01T15:00:00-03:00",
                 "created_at": "2026-06-24T00:17:49.908659",
                 "updated_at": "2026-06-24T00:17:49.908659",

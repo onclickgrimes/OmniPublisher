@@ -49,6 +49,9 @@ def _validate_publish_request(request: PublishRequest, db: Session):
     if request.workspace_id is not None:
         request.workspace_id = request.workspace_id.strip() or None
 
+    if request.instagram_fb_destination_id is not None:
+        request.instagram_fb_destination_id = request.instagram_fb_destination_id.strip() or None
+
     if request.workspace_id:
         workspace = db.query(Workspace).filter(Workspace.id == request.workspace_id).first()
         if not workspace:
@@ -115,6 +118,39 @@ def _validate_publish_request(request: PublishRequest, db: Session):
         normalized_accounts[platform] = account_id
 
     request.accounts = normalized_accounts
+
+    if request.instagram_fb_destination_type and not request.instagram_fb_destination_id:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "instagram_fb_destination_type só pode ser informado junto de "
+                "instagram_fb_destination_id."
+            ),
+        )
+
+    if request.instagram_fb_destination_id and not request.instagram_share_to_facebook:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "instagram_share_to_facebook=true é obrigatório quando "
+                "instagram_fb_destination_id é informado."
+            ),
+        )
+
+    if request.instagram_fb_destination_id and request.instagram_fb_destination_type is None:
+        request.instagram_fb_destination_type = "PAGE"
+
+    if request.instagram_share_to_facebook:
+        if "instagram" not in request.accounts:
+            raise HTTPException(
+                status_code=400,
+                detail="instagram_share_to_facebook requer uma conta Instagram em accounts.",
+            )
+        if request.instagram_format != "reels":
+            raise HTTPException(
+                status_code=400,
+                detail="Crosspost do Instagram para Facebook está disponível apenas para Reels.",
+            )
 
 @router.post("/publish/omnichannel", response_model=PublishResponse)
 async def publish_omnichannel(

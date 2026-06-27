@@ -109,6 +109,10 @@ async def retry_task_platform(
             detail=f"Não foi possível identificar a conta usada em '{normalized_platform}'.",
         )
 
+    retry_instagram_crosspost = normalized_platform == "instagram" and bool(
+        job.get("instagram_share_to_facebook")
+    )
+
     retry_request = PublishRequest(
         workspace_id=job.get("workspace_id"),
         mode="immediate",
@@ -121,6 +125,9 @@ async def retry_task_platform(
         youtube_tags=job.get("youtube_tags") or [],
         youtube_privacy=job.get("youtube_privacy") or "public",
         instagram_format=job.get("instagram_format") or "reels",
+        instagram_share_to_facebook=retry_instagram_crosspost,
+        instagram_fb_destination_id=job.get("instagram_fb_destination_id") if retry_instagram_crosspost else None,
+        instagram_fb_destination_type=job.get("instagram_fb_destination_type") if retry_instagram_crosspost else None,
     )
     _validate_publish_request(retry_request, db)
 

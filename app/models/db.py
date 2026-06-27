@@ -96,6 +96,9 @@ class PublishJob(Base):
     youtube_tags_json = Column(Text, nullable=True)
     youtube_privacy = Column(String, nullable=False, default="public")
     instagram_format = Column(String, nullable=False, default="reels")
+    instagram_share_to_facebook = Column(Boolean, nullable=False, default=False)
+    instagram_fb_destination_id = Column(Text, nullable=True)
+    instagram_fb_destination_type = Column(String, nullable=True)
     scheduled_at = Column(DateTime, nullable=True, index=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
@@ -155,3 +158,11 @@ def ensure_database_schema():
         if "workspace_id" not in publish_job_columns:
             conn.exec_driver_sql("ALTER TABLE publish_jobs ADD COLUMN workspace_id VARCHAR(36)")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_publish_jobs_workspace_id ON publish_jobs (workspace_id)")
+        if "instagram_share_to_facebook" not in publish_job_columns:
+            conn.exec_driver_sql(
+                "ALTER TABLE publish_jobs ADD COLUMN instagram_share_to_facebook BOOLEAN NOT NULL DEFAULT 0"
+            )
+        if "instagram_fb_destination_id" not in publish_job_columns:
+            conn.exec_driver_sql("ALTER TABLE publish_jobs ADD COLUMN instagram_fb_destination_id TEXT")
+        if "instagram_fb_destination_type" not in publish_job_columns:
+            conn.exec_driver_sql("ALTER TABLE publish_jobs ADD COLUMN instagram_fb_destination_type VARCHAR")
