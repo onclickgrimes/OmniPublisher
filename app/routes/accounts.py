@@ -15,7 +15,7 @@ from app.models.schemas import (
     AccountUpdate,
     InstagramSessionSubmit,
 )
-from app.providers.instagram_api import _facebook_page_destination_from_profile
+from app.providers.instagram_api import _instagram_facebook_destination_status
 from app.services.account_status_checker import account_status_checker
 from app.services.session_manager import session_manager
 
@@ -190,12 +190,16 @@ def get_instagram_facebook_destination(account_id: str, db: Session = Depends(ge
 
     try:
         client = session_manager.get_instagram_client(account.id)
-        destination_id, destination_type, destination_name = _facebook_page_destination_from_profile(client)
+        status = _instagram_facebook_destination_status(client)
     except Exception as exc:
         return {
             "account_id": account.id,
             "platform": "instagram",
             "available": False,
+            "crosspost_supported": False,
+            "requires_facebook_token": False,
+            "share_to_fb_unavailable": None,
+            "can_crosspost_without_fb_token": None,
             "destination_id": None,
             "destination_type": None,
             "destination_name": None,
@@ -203,27 +207,10 @@ def get_instagram_facebook_destination(account_id: str, db: Session = Depends(ge
             "message": f"Não foi possível verificar a Página vinculada: {exc}",
         }
 
-    if not destination_id:
-        return {
-            "account_id": account.id,
-            "platform": "instagram",
-            "available": False,
-            "destination_id": None,
-            "destination_type": None,
-            "destination_name": None,
-            "source": None,
-            "message": "Nenhuma Página Facebook vinculada foi encontrada no perfil Instagram.",
-        }
-
     return {
         "account_id": account.id,
         "platform": "instagram",
-        "available": True,
-        "destination_id": destination_id,
-        "destination_type": destination_type or "PAGE",
-        "destination_name": destination_name,
-        "source": "instagram_profile_page_id",
-        "message": "Página vinculada encontrada no perfil Instagram.",
+        **{key: value for key, value in status.items() if key != "diagnostics"},
     }
 
 

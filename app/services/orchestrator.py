@@ -81,6 +81,8 @@ class PublishOrchestrator:
 
             result = await provider.upload(request.video_path, request.caption, **kwargs)
             _validate_provider_result(platform_name, result)
+            if isinstance(result, dict):
+                await task_manager.record_platform_result(task_id, platform_name, result)
 
             for warning in _provider_warnings(result):
                 await task_manager.record_platform_warning(

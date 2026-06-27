@@ -263,9 +263,16 @@ como `success` e o detalhe fica registrado como evento `platform_warning`.
 
 Para Reels do Instagram, `instagram_share_to_facebook=true` tenta compartilhar
 também no Facebook/Página vinculada no app Instagram. Isso depende da conta ter
-crosspost configurado na Central de Contas. Quando o preflight de Reels não
-devolve destino, o OmniPublisher tenta usar o `page_id` exposto pelo próprio
-perfil Instagram. Se ainda assim falhar, informe explicitamente:
+crosspost configurado na Central de Contas e da sessão privada do Instagram ter
+permissão para publicar no Facebook sem um token da Página. Página vinculada
+detectada via `page_id` não garante que o crosspost será aceito pelo Facebook.
+Quando o endpoint de verificação retornar `crosspost_supported=false`, o
+OmniPublisher bloqueia o upload com crosspost em vez de marcar o job como sucesso
+parcial. Para publicação garantida na Página, cadastre a Página como integração
+Facebook/Graph API.
+
+Quando o crosspost estiver suportado e o destino precisar ser informado
+explicitamente:
 
 ```json
 {
@@ -288,9 +295,18 @@ GET /accounts/{account_id}/instagram/facebook-destination
 **Exemplo de Resposta (200 OK):**
 ```json
 {
-  "task_id": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "accepted",
-  "message": "Upload iniciado. Acompanhe pelo endpoint SSE."
+  "account_id": "account-id-instagram",
+  "platform": "instagram",
+  "available": true,
+  "crosspost_supported": false,
+  "requires_facebook_token": true,
+  "share_to_fb_unavailable": true,
+  "can_crosspost_without_fb_token": false,
+  "destination_id": "286518801210920",
+  "destination_type": "PAGE",
+  "destination_name": "Olavodecarvalho.ia",
+  "source": "instagram_profile_page_id",
+  "message": "Página vinculada encontrada, mas a sessão Instagram não pode publicar nela sem token do Facebook. Para publicação garantida na Página, cadastre a Página via integração Facebook/Graph API."
 }
 ```
 

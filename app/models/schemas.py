@@ -145,6 +145,10 @@ class InstagramFacebookDestinationResponse(BaseModel):
     account_id: str
     platform: Literal["instagram"] = "instagram"
     available: bool
+    crosspost_supported: bool = False
+    requires_facebook_token: bool = False
+    share_to_fb_unavailable: Optional[bool] = None
+    can_crosspost_without_fb_token: Optional[bool] = None
     destination_id: Optional[str] = None
     destination_type: Optional[Literal["USER", "PAGE"]] = None
     destination_name: Optional[str] = None
@@ -157,11 +161,18 @@ class InstagramFacebookDestinationResponse(BaseModel):
                 "account_id": "account-id-instagram",
                 "platform": "instagram",
                 "available": True,
+                "crosspost_supported": False,
+                "requires_facebook_token": True,
+                "share_to_fb_unavailable": True,
+                "can_crosspost_without_fb_token": False,
                 "destination_id": "100248175290538",
                 "destination_type": "PAGE",
                 "destination_name": "Aura Real",
                 "source": "instagram_profile_page_id",
-                "message": "Página vinculada encontrada no perfil Instagram.",
+                "message": (
+                    "Página vinculada encontrada, mas a sessão Instagram não pode "
+                    "publicar nela sem token do Facebook."
+                ),
             }
         }
 

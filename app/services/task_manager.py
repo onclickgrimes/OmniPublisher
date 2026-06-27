@@ -32,7 +32,7 @@ def _loads_json(value: str | None, fallback: Any):
 
 
 def _dumps_json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False)
+    return json.dumps(value, ensure_ascii=False, default=str)
 
 
 class TaskManager:
@@ -199,6 +199,49 @@ class TaskManager:
                 if task_id in self.tasks_state and platform in self.tasks_state[task_id].platforms
                 else None,
                 "warning": message,
+                "payload": event_payload,
+            },
+        )
+
+    async def record_platform_result(
+        self,
+        task_id: str,
+        platform: str,
+        payload: dict[str, Any],
+    ):
+        """
+        Persiste o retorno do provider para auditoria pós-upload.
+        """
+        now = _utc_now()
+        event_payload = {
+            "platform": platform,
+            "result": payload,
+        }
+
+        db = SessionLocal()
+        try:
+            job = db.query(PublishJob).filter(PublishJob.id == task_id).first()
+            if not job or job.status == "canceled":
+                return
+
+            job.updated_at = now
+            self._add_event(
+                db,
+                task_id,
+                "platform_result",
+                f"{platform}: resultado do provider registrado.",
+                event_payload,
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        await self._notify_subscribers(
+            task_id,
+            {
+                "type": "result",
+                "task_id": task_id,
+                "platform": platform,
                 "payload": event_payload,
             },
         )
