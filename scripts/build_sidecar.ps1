@@ -50,6 +50,14 @@ try {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $TikTokConfigTarget) | Out-Null
     Copy-Item -LiteralPath $TikTokConfigSource -Destination $TikTokConfigTarget -Force
 
+    $CloudflaredSource = Join-Path $ProjectRoot ".tools\cloudflared.exe"
+    $CloudflaredTarget = Join-Path $DistRoot ".tools\cloudflared.exe"
+    if (-not (Test-Path -LiteralPath $CloudflaredSource)) {
+        throw "cloudflared.exe nao encontrado em: $CloudflaredSource"
+    }
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $CloudflaredTarget) | Out-Null
+    Copy-Item -LiteralPath $CloudflaredSource -Destination $CloudflaredTarget -Force
+
     $PlaywrightNode = Join-Path $DistRoot "playwright\driver\node.exe"
     if (Test-Path -LiteralPath $PlaywrightNode) {
         $ResolvedNode = Resolve-Path -LiteralPath $PlaywrightNode

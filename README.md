@@ -209,6 +209,7 @@ Antes de iniciar o OAuth da Meta para uma conta Instagram, cadastre no banco do
 sidecar os dois pares de credenciais do mesmo app Meta:
 
 - `facebook_app_id` e `facebook_app_secret`: ficam em **Configurações do app > Básico**.
+- `facebook_login_config_id`: opcional/legado. O login de Página do OmniPublisher pede os scopes obrigatórios diretamente.
 - `instagram_app_id` e `instagram_app_secret`: ficam em **API do Instagram > Configuração da API com login...**.
 
 Essas credenciais não são lidas do `.env`. Segredos nunca são retornados nas respostas.
@@ -227,6 +228,7 @@ Exemplo:
 {
   "facebook_app_id": "1307102344871792",
   "facebook_app_secret": "chave_secreta_do_aplicativo",
+  "facebook_login_config_id": "id_da_configuracao_login_for_business",
   "instagram_app_id": "1673248073725671",
   "instagram_app_secret": "chave_secreta_do_app_do_instagram"
 }
@@ -238,9 +240,42 @@ Depois de configurar, inicie o login OAuth para uma conta Instagram cadastrada:
 GET /api/auth/facebook/login?account_id={account_id}
 ```
 
+Se estiver usando Cloudflare Tunnel temporário, prefira preparar o login antes
+para copiar o domínio/callback no painel da Meta:
+
+```http
+GET /api/auth/facebook/login-info?account_id={account_id}
+```
+
 O callback salva o token Graph API na própria conta Instagram. A resposta de
 `GET /accounts/{account_id}` indica `graph_connected`, `account_type`,
 `ig_business_id` e dados de Página quando disponíveis.
+
+Para conectar uma Página Facebook, crie uma conta com `platform="facebook"` e
+inicie o login de Página usando o ID dessa conta:
+
+```http
+GET /api/auth/facebook-page/login?account_id={account_id}
+```
+
+Para Cloudflare Tunnel temporário, prepare o login antes de abrir o Facebook:
+
+```http
+GET /api/auth/facebook-page/login-info?account_id={account_id}
+```
+
+Esse fluxo usa `facebook_app_id` e `facebook_app_secret`, lista as Páginas via
+Facebook Login com os scopes `pages_show_list`, `pages_read_engagement` e
+`pages_manage_posts`, e salva `fb_page_id`, `fb_page_name` e o Page Access Token
+na conta Facebook. Se houver mais de uma Página, o callback mostra uma tela
+simples de seleção ou o frontend pode usar:
+
+- `GET /api/auth/facebook-page/pages?selection_token=...`: lista opções pendentes.
+- `POST /api/auth/facebook-page/select`: seleciona `{ "selection_token": "...", "page_id": "..." }`.
+- `DELETE /accounts/{account_id}/facebook-page`: desconecta a Página salva.
+
+A publicação em Página Facebook usa upload direto do arquivo local para a Graph
+API (`graph-video.facebook.com`) e não usa URL pública/Cloudflare no publish.
 
 ### 4. Iniciar ou Agendar um Upload (POST `/publish/omnichannel`)
 
@@ -261,13 +296,13 @@ a conta pertence à plataforma informada.
   "accounts": {
     "youtube": "uuid-da-conta-youtube",
     "instagram": "uuid-da-conta-instagram",
+    "facebook": "uuid-da-conta-facebook",
     "tiktok": "a1f4f6fd-0974-4556-b88d-b2327a478170"
   },
   "youtube_title": "Título Incrível",
   "youtube_tags": ["python", "automacao"],
   "youtube_privacy": "public",
-  "instagram_format": "reels",
-  "instagram_share_to_facebook": true
+  "instagram_format": "reels"
 }
 ```
 
@@ -301,54 +336,11 @@ integração atual: YouTube e Instagram. No TikTok, `thumb_path` é ignorado.
 Se o vídeo for publicado mas a plataforma recusar a capa/thumbnail, o job continua
 como `success` e o detalhe fica registrado como evento `platform_warning`.
 
-Para Reels do Instagram, `instagram_share_to_facebook=true` tenta compartilhar
-também no Facebook/Página vinculada no app Instagram. Isso depende da conta ter
-crosspost configurado na Central de Contas e da sessão privada do Instagram ter
-permissão para publicar no Facebook sem um token da Página. Página vinculada
-detectada via `page_id` não garante que o crosspost será aceito pelo Facebook.
-Quando o endpoint de verificação retornar `crosspost_supported=false`, o
-OmniPublisher bloqueia o upload com crosspost em vez de marcar o job como sucesso
-parcial. Para publicação garantida na Página, cadastre a Página como integração
-Facebook/Graph API.
-
-Quando o crosspost estiver suportado e o destino precisar ser informado
-explicitamente:
-
-```json
-{
-  "instagram_format": "reels",
-  "instagram_share_to_facebook": true,
-  "instagram_fb_destination_id": "FACEBOOK_DESTINATION_ID",
-  "instagram_fb_destination_type": "PAGE"
-}
-```
-
-`instagram_fb_destination_type` aceita `PAGE` ou `USER`. O crosspost para
-Facebook só é suportado para `instagram_format: "reels"`.
-
-Para consultar a Página detectada antes de publicar:
-
-```http
-GET /accounts/{account_id}/instagram/facebook-destination
-```
-
-**Exemplo de Resposta (200 OK):**
-```json
-{
-  "account_id": "account-id-instagram",
-  "platform": "instagram",
-  "available": true,
-  "crosspost_supported": false,
-  "requires_facebook_token": true,
-  "share_to_fb_unavailable": true,
-  "can_crosspost_without_fb_token": false,
-  "destination_id": "286518801210920",
-  "destination_type": "PAGE",
-  "destination_name": "Olavodecarvalho.ia",
-  "source": "instagram_profile_page_id",
-  "message": "Página vinculada encontrada, mas a sessão Instagram não pode publicar nela sem token do Facebook. Para publicação garantida na Página, cadastre a Página via integração Facebook/Graph API."
-}
-```
+Facebook é uma plataforma própria. Para publicar na Página, crie/conecte uma
+conta `platform="facebook"` e envie o ID dessa conta em `accounts.facebook`.
+Os campos legados `instagram_share_to_facebook`,
+`instagram_fb_destination_id` e `instagram_fb_destination_type` são recusados
+pelo endpoint de publicação.
 
 > **Aviso sobre Sessões:** 
 > - **TikTok**: O cookie/session ID é informado no cadastro da conta e fica salvo no banco. No publish, use apenas o `id` dessa conta.

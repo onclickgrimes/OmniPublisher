@@ -47,6 +47,9 @@ def _status_payload(account: Account, check: AccountStatusCheck, *, cached: bool
         "graph_api_connected": bool(
             getattr(account, "graph_token", None) and getattr(account, "ig_business_id", None)
         ),
+        "facebook_page_connected": bool(
+            getattr(account, "fb_page_id", None) and getattr(account, "fb_page_token", None)
+        ),
         "fb_page_name": getattr(account, "fb_page_name", None),
     }
 
@@ -66,6 +69,9 @@ def _unknown_status_payload(account: Account, message: str) -> dict[str, Any]:
         "account_type": account.account_type,
         "graph_api_connected": bool(
             getattr(account, "graph_token", None) and getattr(account, "ig_business_id", None)
+        ),
+        "facebook_page_connected": bool(
+            getattr(account, "fb_page_id", None) and getattr(account, "fb_page_token", None)
         ),
         "fb_page_name": getattr(account, "fb_page_name", None),
     }
@@ -363,6 +369,8 @@ class AccountStatusChecker:
             return self._probe_instagram(account)
         if account.platform == "tiktok":
             return self._probe_tiktok(account)
+        if account.platform == "facebook":
+            return self._probe_facebook(account)
         return {
             "status": "error",
             "message": f"Plataforma '{account.platform}' não suportada.",
@@ -455,6 +463,19 @@ class AccountStatusChecker:
         return {
             "status": "connected",
             "message": "Session ID do TikTok cadastrado. A validação web completa ocorre no publish.",
+        }
+
+    def _probe_facebook(self, account: Account) -> dict[str, Any]:
+        if getattr(account, "fb_page_id", None) and getattr(account, "fb_page_token", None):
+            page_name = getattr(account, "fb_page_name", None) or account.identifier or account.name
+            return {
+                "status": "connected",
+                "message": f"Página Facebook conectada: {page_name}.",
+            }
+
+        return {
+            "status": "needs_auth",
+            "message": "Conecte uma Página Facebook para publicar.",
         }
 
     def _persist_check(

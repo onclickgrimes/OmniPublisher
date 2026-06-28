@@ -104,6 +104,7 @@ class IntegrationConfig(Base):
     provider = Column(String, nullable=False, index=True)
     facebook_app_id = Column(String, nullable=True)
     facebook_app_secret = Column(Text, nullable=True)
+    facebook_login_config_id = Column(String, nullable=True)
     instagram_app_id = Column(String, nullable=True)
     instagram_app_secret = Column(Text, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
@@ -231,6 +232,8 @@ def ensure_database_schema():
                 conn.exec_driver_sql("ALTER TABLE integration_configs ADD COLUMN facebook_app_id VARCHAR")
             if "facebook_app_secret" not in integration_columns:
                 conn.exec_driver_sql("ALTER TABLE integration_configs ADD COLUMN facebook_app_secret TEXT")
+            if "facebook_login_config_id" not in integration_columns:
+                conn.exec_driver_sql("ALTER TABLE integration_configs ADD COLUMN facebook_login_config_id VARCHAR")
             if "instagram_app_id" not in integration_columns:
                 conn.exec_driver_sql("ALTER TABLE integration_configs ADD COLUMN instagram_app_id VARCHAR")
             if "instagram_app_secret" not in integration_columns:
@@ -247,6 +250,7 @@ def ensure_database_schema():
                         provider VARCHAR NOT NULL,
                         facebook_app_id VARCHAR,
                         facebook_app_secret TEXT,
+                        facebook_login_config_id VARCHAR,
                         instagram_app_id VARCHAR,
                         instagram_app_secret TEXT,
                         created_at DATETIME NOT NULL,
@@ -263,6 +267,7 @@ def ensure_database_schema():
                         provider,
                         facebook_app_id,
                         facebook_app_secret,
+                        facebook_login_config_id,
                         instagram_app_id,
                         instagram_app_secret,
                         created_at,
@@ -273,6 +278,7 @@ def ensure_database_schema():
                         provider,
                         facebook_app_id,
                         facebook_app_secret,
+                        facebook_login_config_id,
                         instagram_app_id,
                         instagram_app_secret,
                         created_at,

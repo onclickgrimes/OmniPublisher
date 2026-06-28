@@ -1,7 +1,9 @@
 import os
 from uuid import uuid4
 from datetime import datetime
+# pyrefly: ignore [missing-import]
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+# pyrefly: ignore [missing-import]
 from sqlalchemy.orm import Session
 
 from app.models.db import Account, Workspace, WorkspaceAccount, get_db
@@ -52,6 +54,19 @@ def _validate_publish_request(request: PublishRequest, db: Session):
     if request.instagram_fb_destination_id is not None:
         request.instagram_fb_destination_id = request.instagram_fb_destination_id.strip() or None
 
+    if (
+        request.instagram_share_to_facebook
+        or request.instagram_fb_destination_id
+        or request.instagram_fb_destination_type
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Facebook agora é publicado como plataforma própria. "
+                "Conecte uma conta platform='facebook' e envie em accounts.facebook."
+            ),
+        )
+
     if request.workspace_id:
         workspace = db.query(Workspace).filter(Workspace.id == request.workspace_id).first()
         if not workspace:
@@ -99,6 +114,15 @@ def _validate_publish_request(request: PublishRequest, db: Session):
                 ),
             )
 
+        if platform == "facebook" and not getattr(account, "fb_page_token", None):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Conta Facebook '{account_id}' não possui Página conectada. "
+                    "Conecte uma Página via /api/auth/facebook-page/login antes de publicar."
+                ),
+            )
+
         if request.workspace_id:
             linked = (
                 db.query(WorkspaceAccount)
@@ -119,48 +143,6 @@ def _validate_publish_request(request: PublishRequest, db: Session):
 
     request.accounts = normalized_accounts
 
-    if request.instagram_fb_destination_type and not request.instagram_fb_destination_id:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "instagram_fb_destination_type só pode ser informado junto de "
-                "instagram_fb_destination_id."
-            ),
-        )
-
-    if request.instagram_fb_destination_id and not request.instagram_share_to_facebook:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "instagram_share_to_facebook=true é obrigatório quando "
-                "instagram_fb_destination_id é informado."
-            ),
-        )
-
-    if request.instagram_fb_destination_id and request.instagram_fb_destination_type is None:
-        request.instagram_fb_destination_type = "PAGE"
-
-    if request.instagram_share_to_facebook:
-        if "instagram" not in request.accounts:
-            raise HTTPException(
-                status_code=400,
-                detail="instagram_share_to_facebook requer uma conta Instagram em accounts.",
-            )
-        if request.instagram_format != "reels":
-            raise HTTPException(
-                status_code=400,
-                detail="Crosspost do Instagram para Facebook está disponível apenas para Reels.",
-            )
-
-        # Inteligência Dual-Auth: Se a conta Instagram selecionada tiver token do Facebook,
-        # separamos a publicação em duas tarefas independentes em vez de usar o crosspost interno.
-        ig_account_id = request.accounts["instagram"]
-        ig_account = db.query(Account).filter(Account.id == ig_account_id).first()
-        if ig_account and getattr(ig_account, "fb_page_token", None):
-            request.accounts["facebook"] = ig_account_id
-            request.instagram_share_to_facebook = False # Desativa o crosspost acoplado
-            request.instagram_fb_destination_id = None
-            request.instagram_fb_destination_type = None
 
 @router.post("/publish/omnichannel", response_model=PublishResponse)
 async def publish_omnichannel(

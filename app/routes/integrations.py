@@ -49,6 +49,7 @@ def _meta_response(config: IntegrationConfig) -> MetaIntegrationResponse:
         provider="meta",
         facebook_app_id=config.facebook_app_id,
         has_facebook_app_secret=bool(config.facebook_app_secret),
+        facebook_login_config_id=config.facebook_login_config_id,
         instagram_app_id=config.instagram_app_id,
         has_instagram_app_secret=bool(config.instagram_app_secret),
         created_at=config.created_at,
@@ -71,6 +72,9 @@ def create_meta_integration(payload: MetaIntegrationCreate, db: Session = Depend
         provider=META_PROVIDER,
         facebook_app_id=_trim_required(data["facebook_app_id"], "facebook_app_id"),
         facebook_app_secret=_trim_required(data["facebook_app_secret"], "facebook_app_secret"),
+        facebook_login_config_id=(str(data.get("facebook_login_config_id")).strip() or None)
+        if data.get("facebook_login_config_id") is not None
+        else None,
         instagram_app_id=_trim_required(data["instagram_app_id"], "instagram_app_id"),
         instagram_app_secret=_trim_required(data["instagram_app_secret"], "instagram_app_secret"),
         created_at=now,
@@ -86,7 +90,7 @@ def create_meta_integration(payload: MetaIntegrationCreate, db: Session = Depend
 def upsert_meta_integration(payload: MetaIntegrationCreate, db: Session = Depends(get_db)):
     """
     Cria ou substitui as credenciais Meta.
-    Use antes de iniciar /api/auth/facebook/login.
+    Use antes de iniciar /api/auth/facebook/login ou /api/auth/facebook-page/login.
     """
     data = _model_dump(payload)
     config = _get_meta_config(db)
@@ -100,6 +104,9 @@ def upsert_meta_integration(payload: MetaIntegrationCreate, db: Session = Depend
 
     config.facebook_app_id = _trim_required(data["facebook_app_id"], "facebook_app_id")
     config.facebook_app_secret = _trim_required(data["facebook_app_secret"], "facebook_app_secret")
+    config.facebook_login_config_id = (
+        str(data.get("facebook_login_config_id")).strip() or None
+    ) if data.get("facebook_login_config_id") is not None else None
     config.instagram_app_id = _trim_required(data["instagram_app_id"], "instagram_app_id")
     config.instagram_app_secret = _trim_required(data["instagram_app_secret"], "instagram_app_secret")
     config.updated_at = now
@@ -126,6 +133,9 @@ def update_meta_integration(payload: MetaIntegrationUpdate, db: Session = Depend
         config.facebook_app_id = _trim_required(data["facebook_app_id"], "facebook_app_id")
     if "facebook_app_secret" in data and data["facebook_app_secret"] is not None:
         config.facebook_app_secret = _trim_required(data["facebook_app_secret"], "facebook_app_secret")
+    if "facebook_login_config_id" in data:
+        value = data["facebook_login_config_id"]
+        config.facebook_login_config_id = (str(value).strip() or None) if value is not None else None
     if "instagram_app_id" in data and data["instagram_app_id"] is not None:
         config.instagram_app_id = _trim_required(data["instagram_app_id"], "instagram_app_id")
     if "instagram_app_secret" in data and data["instagram_app_secret"] is not None:

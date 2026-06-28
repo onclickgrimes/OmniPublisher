@@ -9,6 +9,7 @@ from app.models.db import Account, AccountStatusCheck, Workspace, WorkspaceAccou
 from app.models.schemas import (
     AccountChallengeSubmit,
     AccountCreate,
+    FacebookPageConnectResponse,
     GraphApiConnectResponse,
     InstagramFacebookDestinationResponse,
     AccountResponse,
@@ -270,6 +271,29 @@ def disconnect_graph_api(account_id: str, db: Session = Depends(get_db)):
         fb_page_name=None,
         graph_token_expires_at=None,
         message="Graph API desconectada. A conta continua ativa via instagrapi.",
+    )
+
+
+@router.delete("/{account_id}/facebook-page", response_model=FacebookPageConnectResponse)
+def disconnect_facebook_page(account_id: str, db: Session = Depends(get_db)):
+    """
+    Desconecta a Página Facebook vinculada à conta sem remover outros tokens.
+    """
+    db_account = _get_account_or_404(account_id, db)
+    if not db_account.fb_page_id and not db_account.fb_page_token:
+        raise HTTPException(status_code=400, detail="Esta conta não possui Página Facebook conectada.")
+
+    db_account.fb_page_id = None
+    db_account.fb_page_token = None
+    db_account.fb_page_name = None
+    db.commit()
+    db.refresh(db_account)
+    return FacebookPageConnectResponse(
+        account_id=db_account.id,
+        facebook_page_connected=False,
+        fb_page_id=None,
+        fb_page_name=None,
+        message="Página Facebook desconectada.",
     )
 
 

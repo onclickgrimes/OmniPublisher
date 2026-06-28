@@ -83,7 +83,19 @@ def meta_login(account_id: str, db: Session = Depends(get_db)):
     Gera a URL de autorização OAuth do Instagram para uma conta específica
     e redireciona o usuário para lá.
     """
-    # Validar se a conta existe antes de redirecionar
+    return RedirectResponse(_prepare_meta_login(account_id, db)["auth_url"])
+
+
+@router.get("/login-info")
+def meta_login_info(account_id: str, db: Session = Depends(get_db)):
+    """
+    Prepara o OAuth e retorna os dados necessários para cadastrar manualmente
+    o redirect URI randômico antes de abrir o login no navegador.
+    """
+    return _prepare_meta_login(account_id, db)
+
+
+def _prepare_meta_login(account_id: str, db: Session) -> dict:
     account = db.query(Account).filter(Account.id == account_id).first()
     if not account:
         raise HTTPException(status_code=404, detail="Conta não encontrada.")
@@ -121,7 +133,15 @@ def meta_login(account_id: str, db: Session = Depends(get_db)):
     }
 
     auth_url = f"https://www.instagram.com/oauth/authorize?{urllib.parse.urlencode(params)}"
-    return RedirectResponse(auth_url)
+    return {
+        "account_id": account_id,
+        "provider": "instagram_graph",
+        "auth_url": auth_url,
+        "redirect_uri": redirect_uri,
+        "domain": urllib.parse.urlparse(redirect_uri).netloc,
+        "scopes": META_SCOPES,
+        "expires_in_seconds": CLOUDFLARE_TUNNEL_LOGIN_TTL_SECONDS,
+    }
 
 
 @router.get("/callback")

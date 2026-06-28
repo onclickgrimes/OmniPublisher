@@ -81,6 +81,7 @@ class AccountResponse(BaseModel):
     identifier: str
     account_type: Optional[str] = None
     graph_connected: bool = False
+    facebook_page_connected: bool = False
     fb_page_id: Optional[str] = None
     fb_page_name: Optional[str] = None
     ig_business_id: Optional[str] = None
@@ -98,6 +99,7 @@ class AccountResponse(BaseModel):
             identifier=account.identifier,
             account_type=account.account_type,
             graph_connected=bool(account.graph_token and account.ig_business_id),
+            facebook_page_connected=bool(account.fb_page_id and account.fb_page_token),
             fb_page_id=account.fb_page_id,
             fb_page_name=account.fb_page_name,
             ig_business_id=account.ig_business_id,
@@ -117,6 +119,7 @@ class AccountStatusResponse(BaseModel):
     raw: Optional[Dict[str, Any]] = None
     account_type: Optional[str] = None
     graph_api_connected: bool = False
+    facebook_page_connected: bool = False
     fb_page_name: Optional[str] = None
 
     class Config:
@@ -134,6 +137,7 @@ class AccountStatusResponse(BaseModel):
                 "raw": {},
                 "account_type": None,
                 "graph_api_connected": False,
+                "facebook_page_connected": False,
                 "fb_page_name": None,
             }
         }
@@ -231,11 +235,62 @@ class GraphApiConnectResponse(BaseModel):
         }
 
 
+class FacebookPageCandidateResponse(BaseModel):
+    id: str
+    name: str
+    tasks: List[str] = Field(default_factory=list)
+    can_publish: bool = False
+
+
+class FacebookPageConnectResponse(BaseModel):
+    account_id: str
+    facebook_page_connected: bool
+    fb_page_id: Optional[str] = None
+    fb_page_name: Optional[str] = None
+    pages: List[FacebookPageCandidateResponse] = Field(default_factory=list)
+    selection_token: Optional[str] = None
+    message: str
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "account_id": "account-id-instagram",
+                "facebook_page_connected": True,
+                "fb_page_id": "100248175290538",
+                "fb_page_name": "Aura Real",
+                "pages": [],
+                "selection_token": None,
+                "message": "Página Facebook conectada com sucesso: Aura Real.",
+            }
+        }
+
+
+class FacebookPageSelectRequest(BaseModel):
+    selection_token: str = Field(..., min_length=1)
+    page_id: str = Field(..., min_length=1)
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "selection_token": "token-temporario",
+                "page_id": "100248175290538",
+            }
+        }
+
+
 # --- Pydantic Models para Integrations ---
 
 class MetaIntegrationCreate(BaseModel):
     facebook_app_id: str = Field(..., min_length=1, description="ID do Aplicativo principal da Meta/Facebook.")
     facebook_app_secret: str = Field(..., min_length=1, description="Chave secreta do Aplicativo principal da Meta/Facebook.")
+    facebook_login_config_id: Optional[str] = Field(
+        None,
+        min_length=1,
+        description=(
+            "ID opcional da configuração do Facebook Login for Business. "
+            "O login de Página do OmniPublisher pede os scopes obrigatórios diretamente."
+        ),
+    )
     instagram_app_id: str = Field(..., min_length=1, description="ID do app do Instagram em API do Instagram.")
     instagram_app_secret: str = Field(..., min_length=1, description="Chave secreta do app do Instagram em API do Instagram.")
 
@@ -244,6 +299,7 @@ class MetaIntegrationCreate(BaseModel):
             "example": {
                 "facebook_app_id": "1307102344871792",
                 "facebook_app_secret": "chave_secreta_do_aplicativo",
+                "facebook_login_config_id": "123456789012345",
                 "instagram_app_id": "1673248073725671",
                 "instagram_app_secret": "chave_secreta_do_app_do_instagram",
             }
@@ -253,6 +309,14 @@ class MetaIntegrationCreate(BaseModel):
 class MetaIntegrationUpdate(BaseModel):
     facebook_app_id: Optional[str] = Field(None, min_length=1, description="Novo ID do Aplicativo principal da Meta/Facebook.")
     facebook_app_secret: Optional[str] = Field(None, min_length=1, description="Nova chave secreta do Aplicativo principal da Meta/Facebook.")
+    facebook_login_config_id: Optional[str] = Field(
+        None,
+        min_length=1,
+        description=(
+            "Novo ID opcional da configuração do Facebook Login for Business. "
+            "O login de Página do OmniPublisher pede os scopes obrigatórios diretamente."
+        ),
+    )
     instagram_app_id: Optional[str] = Field(None, min_length=1, description="Novo ID do app do Instagram.")
     instagram_app_secret: Optional[str] = Field(None, min_length=1, description="Nova chave secreta do app do Instagram.")
 
@@ -260,6 +324,7 @@ class MetaIntegrationUpdate(BaseModel):
         json_schema_extra = {
             "example": {
                 "facebook_app_id": "1307102344871792",
+                "facebook_login_config_id": "123456789012345",
                 "instagram_app_id": "1673248073725671",
             }
         }
@@ -270,6 +335,7 @@ class MetaIntegrationResponse(BaseModel):
     provider: Literal["meta"] = "meta"
     facebook_app_id: Optional[str] = None
     has_facebook_app_secret: bool
+    facebook_login_config_id: Optional[str] = None
     instagram_app_id: Optional[str] = None
     has_instagram_app_secret: bool
     created_at: datetime
@@ -282,6 +348,7 @@ class MetaIntegrationResponse(BaseModel):
                 "provider": "meta",
                 "facebook_app_id": "1307102344871792",
                 "has_facebook_app_secret": True,
+                "facebook_login_config_id": "123456789012345",
                 "instagram_app_id": "1673248073725671",
                 "has_instagram_app_secret": True,
                 "created_at": "2026-06-24T00:17:49.908659",
@@ -523,7 +590,7 @@ class PublishRequest(BaseModel):
     caption: str = Field(..., description="Legenda do vídeo")
     
     # Agora recebemos um mapeamento de plataforma para ID da conta
-    # Ex: {"youtube": "uuid-1234", "instagram": "uuid-5678", "tiktok": "uuid-9012"}
+    # Ex: {"youtube": "uuid-1234", "instagram": "uuid-5678", "facebook": "uuid-9012"}
     accounts: Dict[PlatformName, str] = Field(
         ...,
         description=(
@@ -539,20 +606,19 @@ class PublishRequest(BaseModel):
     instagram_share_to_facebook: bool = Field(
         False,
         description=(
-            "Quando true, tenta compartilhar o Reel também no Facebook/Página vinculada "
-            "à conta no app Instagram. Disponível apenas para instagram_format='reels'."
+            "Campo legado desativado. Para publicar no Facebook, conecte uma conta "
+            "platform='facebook' e envie o ID em accounts.facebook."
         ),
     )
     instagram_fb_destination_id: Optional[str] = Field(
         None,
         description=(
-            "Destino Facebook opcional para crosspost de Reels. Use quando o instagrapi "
-            "não conseguir descobrir automaticamente a Página vinculada."
+            "Campo legado desativado. Use accounts.facebook para publicar na Página."
         ),
     )
     instagram_fb_destination_type: Optional[Literal["USER", "PAGE"]] = Field(
         None,
-        description="Tipo do destino Facebook quando instagram_fb_destination_id for informado.",
+        description="Campo legado desativado. Use accounts.facebook para publicar na Página.",
     )
 
     class Config:
@@ -566,12 +632,13 @@ class PublishRequest(BaseModel):
                 "caption": "Publicacao via OmniPublisher! #ola",
                 "accounts": {
                     "tiktok": "account-id-tiktok",
+                    "facebook": "account-id-facebook",
                 },
                 "youtube_title": "Titulo do video",
                 "youtube_tags": ["automacao", "video"],
                 "youtube_privacy": "public",
                 "instagram_format": "reels",
-                "instagram_share_to_facebook": True,
+                "instagram_share_to_facebook": False,
                 "instagram_fb_destination_id": None,
                 "instagram_fb_destination_type": None,
             }
@@ -731,12 +798,13 @@ class PublishJobResponse(BaseModel):
                 "caption": "Publicacao via OmniPublisher! #teste",
                 "accounts": {
                     "tiktok": "account-id-tiktok",
+                    "facebook": "account-id-facebook",
                 },
                 "youtube_title": None,
                 "youtube_tags": [],
                 "youtube_privacy": "public",
                 "instagram_format": "reels",
-                "instagram_share_to_facebook": True,
+                "instagram_share_to_facebook": False,
                 "instagram_fb_destination_id": None,
                 "instagram_fb_destination_type": None,
                 "scheduled_at": "2030-01-01T15:00:00-03:00",

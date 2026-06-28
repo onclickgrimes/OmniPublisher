@@ -4,7 +4,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.models.schemas import RuntimeBrowserStatusResponse
-from app.routes import publish, tasks, accounts, workspaces, meta_oauth, public_media, integrations
+from app.routes import (
+    publish,
+    tasks,
+    accounts,
+    workspaces,
+    meta_oauth,
+    public_media,
+    integrations,
+    facebook_page_oauth,
+)
 from app.services.cloudflare_tunnel import cloudflare_tunnel_manager
 from app.services.session_manager import session_manager
 from app.services.scheduler import scheduler
@@ -59,6 +68,7 @@ app.include_router(accounts.router, prefix="/accounts", tags=["Accounts"])
 app.include_router(workspaces.router, tags=["Workspaces"])
 app.include_router(integrations.router, tags=["Integrations"])
 app.include_router(meta_oauth.router, prefix="/api/auth/facebook", tags=["Meta OAuth"])
+app.include_router(facebook_page_oauth.router, prefix="/api/auth/facebook-page", tags=["Facebook Page OAuth"])
 app.include_router(public_media.router, tags=["Public Media"])
 
 @app.on_event("startup")
