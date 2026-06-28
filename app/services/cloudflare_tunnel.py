@@ -56,13 +56,20 @@ class CloudflareTunnelManager:
     def release(self, lease_id: str | None, *, delay_seconds: float = 0) -> None:
         if not lease_id:
             return
-        if delay_seconds > 0:
-            timer = threading.Timer(delay_seconds, self.release, args=[lease_id])
-            timer.daemon = True
-            timer.start()
-            return
 
         with self._lock:
+            if delay_seconds > 0:
+                if lease_id not in self._leases:
+                    return
+                timer = self._timers.pop(lease_id, None)
+                if timer:
+                    timer.cancel()
+                timer = threading.Timer(delay_seconds, self.release, args=[lease_id])
+                timer.daemon = True
+                self._timers[lease_id] = timer
+                timer.start()
+                return
+
             self._leases.pop(lease_id, None)
             timer = self._timers.pop(lease_id, None)
             if timer:

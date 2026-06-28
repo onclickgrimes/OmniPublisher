@@ -86,6 +86,21 @@ class SessionManager:
             "fb_page_token": account.fb_page_token,
         }
 
+    def get_facebook_page_config(self, account_id: str) -> dict:
+        """Retorna config para publicação direta em uma Página Facebook."""
+        account = self.get_account(account_id)
+        if account.platform != "facebook":
+            raise ValueError("ID informado não pertence a uma conta do Facebook.")
+        if not account.fb_page_id or not account.fb_page_token:
+            raise ValueError(
+                "A conta não possui uma Página do Facebook vinculada ou token de acesso de página (Page Access Token) válido."
+            )
+        return {
+            "fb_page_id": account.fb_page_id,
+            "fb_page_token": account.fb_page_token,
+            "fb_page_name": account.fb_page_name,
+        }
+
     def save_graph_api_tokens(self, account_id: str, oauth_data: dict):
         """Salva tokens OAuth da Graph API na conta existente (mantendo credenciais instagrapi)."""
         db = SessionLocal()

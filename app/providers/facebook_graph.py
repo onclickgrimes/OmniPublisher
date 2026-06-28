@@ -18,12 +18,9 @@ class FacebookPageProvider(BaseProvider):
         if not account_id:
             raise ValueError("account_id é obrigatório para publicar na Página do Facebook.")
 
-        config = session_manager.get_graph_api_config(account_id)
+        config = session_manager.get_facebook_page_config(account_id)
         page_id = config.get("fb_page_id")
         page_token = config.get("fb_page_token")
-
-        if not page_id or not page_token:
-            raise ValueError("A conta não possui uma Página do Facebook vinculada ou token de acesso de página (Page Access Token) válido.")
 
         video_file = Path(video_path)
         if not video_file.is_file():
