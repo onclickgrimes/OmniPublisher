@@ -4,9 +4,10 @@ from typing import Any, Optional, Literal, Dict, List
 from datetime import datetime
 
 
-PlatformName = Literal["youtube", "instagram", "tiktok"]
+PlatformName = Literal["youtube", "instagram", "tiktok", "facebook"]
 PublishMode = Literal["immediate", "scheduled"]
 JobStatus = Literal["queued", "running", "success", "error", "canceled"]
+AccountType = Literal["personal", "business", "creator"]
 AccountConnectionStatus = Literal[
     "connected",
     "disconnected",
@@ -78,9 +79,29 @@ class AccountResponse(BaseModel):
     platform: str
     name: str
     identifier: str
-    
+    account_type: Optional[str] = None
+    graph_connected: bool = False
+    fb_page_id: Optional[str] = None
+    fb_page_name: Optional[str] = None
+    ig_business_id: Optional[str] = None
+
     class Config:
         from_attributes = True
+
+    @classmethod
+    def from_account(cls, account) -> "AccountResponse":
+        """Constrói a resposta a partir de um objeto Account do DB."""
+        return cls(
+            id=account.id,
+            platform=account.platform,
+            name=account.name,
+            identifier=account.identifier,
+            account_type=account.account_type,
+            graph_connected=bool(account.graph_token and account.ig_business_id),
+            fb_page_id=account.fb_page_id,
+            fb_page_name=account.fb_page_name,
+            ig_business_id=account.ig_business_id,
+        )
 
 
 class AccountStatusResponse(BaseModel):
@@ -94,6 +115,9 @@ class AccountStatusResponse(BaseModel):
     expires_at: datetime
     cached: bool = False
     raw: Optional[Dict[str, Any]] = None
+    account_type: Optional[str] = None
+    graph_api_connected: bool = False
+    fb_page_name: Optional[str] = None
 
     class Config:
         json_schema_extra = {
@@ -108,6 +132,9 @@ class AccountStatusResponse(BaseModel):
                 "expires_at": "2026-06-24T00:26:54.389039",
                 "cached": True,
                 "raw": {},
+                "account_type": None,
+                "graph_api_connected": False,
+                "fb_page_name": None,
             }
         }
 
@@ -175,6 +202,93 @@ class InstagramFacebookDestinationResponse(BaseModel):
                 ),
             }
         }
+
+class GraphApiConnectResponse(BaseModel):
+    """Resposta após conectar/desconectar a Graph API em uma conta existente."""
+    account_id: str
+    platform: Literal["instagram"] = "instagram"
+    graph_connected: bool
+    account_type: Optional[str] = None
+    ig_business_id: Optional[str] = None
+    fb_page_id: Optional[str] = None
+    fb_page_name: Optional[str] = None
+    graph_token_expires_at: Optional[datetime] = None
+    message: str
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "account_id": "account-id-instagram",
+                "platform": "instagram",
+                "graph_connected": True,
+                "account_type": "business",
+                "ig_business_id": "17841400123456789",
+                "fb_page_id": "100248175290538",
+                "fb_page_name": "Aura Real",
+                "graph_token_expires_at": "2026-08-26T00:00:00",
+                "message": "Graph API conectada com sucesso. Página Facebook: Aura Real.",
+            }
+        }
+
+
+# --- Pydantic Models para Integrations ---
+
+class MetaIntegrationCreate(BaseModel):
+    facebook_app_id: str = Field(..., min_length=1, description="ID do Aplicativo principal da Meta/Facebook.")
+    facebook_app_secret: str = Field(..., min_length=1, description="Chave secreta do Aplicativo principal da Meta/Facebook.")
+    instagram_app_id: str = Field(..., min_length=1, description="ID do app do Instagram em API do Instagram.")
+    instagram_app_secret: str = Field(..., min_length=1, description="Chave secreta do app do Instagram em API do Instagram.")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "facebook_app_id": "1307102344871792",
+                "facebook_app_secret": "chave_secreta_do_aplicativo",
+                "instagram_app_id": "1673248073725671",
+                "instagram_app_secret": "chave_secreta_do_app_do_instagram",
+            }
+        }
+
+
+class MetaIntegrationUpdate(BaseModel):
+    facebook_app_id: Optional[str] = Field(None, min_length=1, description="Novo ID do Aplicativo principal da Meta/Facebook.")
+    facebook_app_secret: Optional[str] = Field(None, min_length=1, description="Nova chave secreta do Aplicativo principal da Meta/Facebook.")
+    instagram_app_id: Optional[str] = Field(None, min_length=1, description="Novo ID do app do Instagram.")
+    instagram_app_secret: Optional[str] = Field(None, min_length=1, description="Nova chave secreta do app do Instagram.")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "facebook_app_id": "1307102344871792",
+                "instagram_app_id": "1673248073725671",
+            }
+        }
+
+
+class MetaIntegrationResponse(BaseModel):
+    id: str
+    provider: Literal["meta"] = "meta"
+    facebook_app_id: Optional[str] = None
+    has_facebook_app_secret: bool
+    instagram_app_id: Optional[str] = None
+    has_instagram_app_secret: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "id": "integration-config-id",
+                "provider": "meta",
+                "facebook_app_id": "1307102344871792",
+                "has_facebook_app_secret": True,
+                "instagram_app_id": "1673248073725671",
+                "has_instagram_app_secret": True,
+                "created_at": "2026-06-24T00:17:49.908659",
+                "updated_at": "2026-06-24T00:17:49.908659",
+            }
+        }
+
 
 
 # --- Pydantic Models para Workspaces ---

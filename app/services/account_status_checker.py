@@ -43,6 +43,11 @@ def _status_payload(account: Account, check: AccountStatusCheck, *, cached: bool
         "expires_at": check.expires_at,
         "cached": cached,
         "raw": raw,
+        "account_type": account.account_type,
+        "graph_api_connected": bool(
+            getattr(account, "graph_token", None) and getattr(account, "ig_business_id", None)
+        ),
+        "fb_page_name": getattr(account, "fb_page_name", None),
     }
 
 
@@ -58,6 +63,11 @@ def _unknown_status_payload(account: Account, message: str) -> dict[str, Any]:
         "checked_at": now,
         "expires_at": now,
         "cached": False,
+        "account_type": account.account_type,
+        "graph_api_connected": bool(
+            getattr(account, "graph_token", None) and getattr(account, "ig_business_id", None)
+        ),
+        "fb_page_name": getattr(account, "fb_page_name", None),
     }
 
 

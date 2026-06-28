@@ -62,6 +62,51 @@ class SessionManager:
         finally:
             db.close()
 
+    # --- Meta Graph API (Instagram Business/Creator) ---
+
+    def has_graph_api(self, account_id: str) -> bool:
+        """Verifica se a conta tem token Graph API válido (dual-auth)."""
+        account = self.get_account(account_id)
+        from datetime import datetime
+        return bool(
+            account.graph_token
+            and account.ig_business_id
+            and (not account.graph_token_expires_at or account.graph_token_expires_at > datetime.utcnow())
+        )
+
+    def get_graph_api_config(self, account_id: str) -> dict:
+        """Retorna config da Graph API para a conta."""
+        account = self.get_account(account_id)
+        if not account.graph_token:
+            raise ValueError("Conta não possui token da Graph API.")
+        return {
+            "access_token": account.graph_token,
+            "ig_business_id": account.ig_business_id,
+            "fb_page_id": account.fb_page_id,
+            "fb_page_token": account.fb_page_token,
+        }
+
+    def save_graph_api_tokens(self, account_id: str, oauth_data: dict):
+        """Salva tokens OAuth da Graph API na conta existente (mantendo credenciais instagrapi)."""
+        db = SessionLocal()
+        try:
+            account = db.query(Account).filter(Account.id == account_id).first()
+            if not account:
+                raise ValueError(f"Conta {account_id} não encontrada.")
+
+            account.graph_token = oauth_data.get("access_token")
+            account.graph_token_expires_at = oauth_data.get("expires_at")
+            account.ig_business_id = oauth_data.get("ig_business_id")
+            account.fb_page_id = oauth_data.get("fb_page_id")
+            account.fb_page_token = oauth_data.get("fb_page_token")
+            account.fb_page_name = oauth_data.get("fb_page_name")
+            account.account_type = oauth_data.get("account_type", "business")
+            db.commit()
+        finally:
+            db.close()
+
+    # --- YouTube ---
+
     def get_youtube_credentials(self, account_id: str) -> Credentials:
         account = self.get_account(account_id)
         if account.platform != "youtube":
@@ -85,7 +130,7 @@ class SessionManager:
                     creds = self._youtube_manual_auth()
             else:
                 creds = self._youtube_manual_auth()
-                
+
             with open(token_file, 'w') as token:
                 token.write(creds.to_json())
 

@@ -7,6 +7,7 @@ from app.providers.base import BaseProvider
 from app.providers.youtube_api import YouTubeProvider
 from app.providers.instagram_api import InstagramProvider
 from app.providers.tiktok_api import TikTokProvider
+from app.providers.facebook_graph import FacebookPageProvider
 
 
 def _validate_provider_result(platform_name: str, result):
@@ -43,6 +44,7 @@ class PublishOrchestrator:
             "youtube": YouTubeProvider,
             "instagram": InstagramProvider,
             "tiktok": TikTokProvider,
+            "facebook": FacebookPageProvider,
         }
 
     async def execute(self, task_id: str, request: PublishRequest):

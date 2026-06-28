@@ -19,10 +19,11 @@ Motor centralizado de postagem omnichannel via REST API (FastAPI) que distribui 
    ```
 
 2. **Configuração de Variáveis de Ambiente:**
-   Copie o arquivo `.env.example` para `.env` e preencha suas credenciais do Instagram:
+   Copie o arquivo `.env.example` para `.env` e ajuste apenas opções de runtime local:
    ```bash
    cp .env.example .env
    ```
+   Credenciais de contas e integrações OAuth são gerenciadas via API e ficam salvas no banco SQLite.
 
 3. **Configuração do YouTube (OAuth2):**
    - Acesse o [Google Cloud Console](https://console.cloud.google.com/).
@@ -202,7 +203,46 @@ a checagem é leve: valida se existe `session_id` cadastrado e se a lib está di
 a validação web completa continua acontecendo no publish.
 O endpoint de overview não força validação; ele retorna apenas cache fresco ou `unknown`.
 
-### 3. Iniciar ou Agendar um Upload (POST `/publish/omnichannel`)
+### 3. Configurar Integração Meta/Instagram Graph API
+
+Antes de iniciar o OAuth da Meta para uma conta Instagram, cadastre no banco do
+sidecar os dois pares de credenciais do mesmo app Meta:
+
+- `facebook_app_id` e `facebook_app_secret`: ficam em **Configurações do app > Básico**.
+- `instagram_app_id` e `instagram_app_secret`: ficam em **API do Instagram > Configuração da API com login...**.
+
+Essas credenciais não são lidas do `.env`. Segredos nunca são retornados nas respostas.
+
+Endpoints:
+
+- `POST /integrations/meta`: cria a configuração Meta.
+- `PUT /integrations/meta`: cria ou substitui a configuração Meta.
+- `GET /integrations/meta`: consulta a configuração sem expor o segredo.
+- `PATCH /integrations/meta`: atualiza parcialmente IDs e/ou segredos.
+- `DELETE /integrations/meta`: remove a configuração Meta.
+
+Exemplo:
+
+```json
+{
+  "facebook_app_id": "1307102344871792",
+  "facebook_app_secret": "chave_secreta_do_aplicativo",
+  "instagram_app_id": "1673248073725671",
+  "instagram_app_secret": "chave_secreta_do_app_do_instagram"
+}
+```
+
+Depois de configurar, inicie o login OAuth para uma conta Instagram cadastrada:
+
+```http
+GET /api/auth/facebook/login?account_id={account_id}
+```
+
+O callback salva o token Graph API na própria conta Instagram. A resposta de
+`GET /accounts/{account_id}` indica `graph_connected`, `account_type`,
+`ig_business_id` e dados de Página quando disponíveis.
+
+### 4. Iniciar ou Agendar um Upload (POST `/publish/omnichannel`)
 
 Envia a requisição para postar o vídeo. O servidor responde imediatamente com um `task_id`.
 Não envie senha, cookie ou session ID neste endpoint. Envie apenas o ID da conta
@@ -315,7 +355,7 @@ GET /accounts/{account_id}/instagram/facebook-destination
 > - **Instagram**: A senha é informada no cadastro da conta. No primeiro uso, o sistema faz login e salva a sessão em `sessions/`.
 > - **YouTube**: No primeiro uso, o navegador abrirá na porta `YOUTUBE_OAUTH_PORT` (`8080` por padrão) para autorizar a conta. Depois o token fica salvo em `sessions/`.
 
-### 4. Consultar e Monitorar Publicações
+### 5. Consultar e Monitorar Publicações
 
 As publicações ficam persistidas no SQLite.
 

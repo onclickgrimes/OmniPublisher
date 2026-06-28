@@ -23,6 +23,7 @@ client_secret.json
 
 # Outros
 *.log
+.tools/
 
 # Build
 build/

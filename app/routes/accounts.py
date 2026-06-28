@@ -9,6 +9,7 @@ from app.models.db import Account, AccountStatusCheck, Workspace, WorkspaceAccou
 from app.models.schemas import (
     AccountChallengeSubmit,
     AccountCreate,
+    GraphApiConnectResponse,
     InstagramFacebookDestinationResponse,
     AccountResponse,
     AccountStatusResponse,
@@ -85,7 +86,7 @@ def create_account(account: AccountCreate, db: Session = Depends(get_db)):
 
     db.commit()
     db.refresh(db_account)
-    return db_account
+    return AccountResponse.from_account(db_account)
 
 
 @router.get("/", response_model=List[AccountResponse])
@@ -107,7 +108,7 @@ def list_accounts(
         query = query.filter(WorkspaceAccount.workspace_id == workspace_id)
     if platform:
         query = query.filter(Account.platform == platform)
-    return query.all()
+    return [AccountResponse.from_account(a) for a in query.all()]
 
 
 @router.get("/{account_id}", response_model=AccountResponse)
@@ -115,7 +116,7 @@ def get_account(account_id: str, db: Session = Depends(get_db)):
     """
     Retorna uma conta cadastrada sem expor credenciais.
     """
-    return _get_account_or_404(account_id, db)
+    return AccountResponse.from_account(_get_account_or_404(account_id, db))
 
 
 @router.get("/{account_id}/status", response_model=AccountStatusResponse)
@@ -234,7 +235,42 @@ def update_account(account_id: str, updates: AccountUpdate, db: Session = Depend
 
     db.commit()
     db.refresh(db_account)
-    return db_account
+    return AccountResponse.from_account(db_account)
+
+
+@router.delete("/{account_id}/graph-api", response_model=GraphApiConnectResponse)
+def disconnect_graph_api(account_id: str, db: Session = Depends(get_db)):
+    """
+    Desconecta a Graph API de uma conta Instagram sem remover a conta.
+    Remove tokens OAuth e dados da Página Facebook, mantendo credenciais instagrapi.
+    """
+    db_account = _get_account_or_404(account_id, db)
+    if db_account.platform != "instagram":
+        raise HTTPException(status_code=400, detail="A Graph API só se aplica a contas Instagram.")
+
+    if not db_account.graph_token and not db_account.ig_business_id:
+        raise HTTPException(status_code=400, detail="Esta conta não possui conexão com a Graph API.")
+
+    db_account.graph_token = None
+    db_account.graph_token_expires_at = None
+    db_account.ig_business_id = None
+    db_account.fb_page_id = None
+    db_account.fb_page_token = None
+    db_account.fb_page_name = None
+    # account_type é mantido — o tipo da conta não muda por desconectar a API
+
+    db.commit()
+    db.refresh(db_account)
+    return GraphApiConnectResponse(
+        account_id=db_account.id,
+        graph_connected=False,
+        account_type=db_account.account_type,
+        ig_business_id=None,
+        fb_page_id=None,
+        fb_page_name=None,
+        graph_token_expires_at=None,
+        message="Graph API desconectada. A conta continua ativa via instagrapi.",
+    )
 
 
 @router.delete("/{account_id}")

@@ -12,7 +12,7 @@ from app.services.time_utils import to_utc_naive, utc_naive_to_app_aware
 
 router = APIRouter()
 
-SUPPORTED_PLATFORMS = {"youtube", "instagram", "tiktok"}
+SUPPORTED_PLATFORMS = {"youtube", "instagram", "tiktok", "facebook"}
 
 
 def _to_utc_naive(value: datetime | None) -> datetime | None:
@@ -152,6 +152,16 @@ def _validate_publish_request(request: PublishRequest, db: Session):
                 detail="Crosspost do Instagram para Facebook está disponível apenas para Reels.",
             )
 
+        # Inteligência Dual-Auth: Se a conta Instagram selecionada tiver token do Facebook,
+        # separamos a publicação em duas tarefas independentes em vez de usar o crosspost interno.
+        ig_account_id = request.accounts["instagram"]
+        ig_account = db.query(Account).filter(Account.id == ig_account_id).first()
+        if ig_account and getattr(ig_account, "fb_page_token", None):
+            request.accounts["facebook"] = ig_account_id
+            request.instagram_share_to_facebook = False # Desativa o crosspost acoplado
+            request.instagram_fb_destination_id = None
+            request.instagram_fb_destination_type = None
+
 @router.post("/publish/omnichannel", response_model=PublishResponse)
 async def publish_omnichannel(
     request: PublishRequest,
@@ -184,7 +194,7 @@ async def publish_omnichannel(
         response_status = "queued"
 
     return PublishResponse(
-        task_id=task_id, 
+        task_id=task_id,
         status=response_status,
         message=message,
         workspace_id=request.workspace_id,
