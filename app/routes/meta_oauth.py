@@ -1,5 +1,8 @@
+# pyrefly: ignore [missing-import]
 from fastapi import APIRouter, Depends, HTTPException, Query
+# pyrefly: ignore [missing-import]
 from fastapi.responses import RedirectResponse
+# pyrefly: ignore [missing-import]
 import httpx
 from datetime import datetime, timedelta
 import secrets
@@ -140,6 +143,9 @@ def _prepare_meta_login(account_id: str, db: Session) -> dict:
         "redirect_uri": redirect_uri,
         "domain": urllib.parse.urlparse(redirect_uri).netloc,
         "scopes": META_SCOPES,
+        "app_id": meta_config.instagram_app_id,
+        "facebook_app_id": meta_config.facebook_app_id,
+        "instagram_app_id": meta_config.instagram_app_id,
         "expires_in_seconds": CLOUDFLARE_TUNNEL_LOGIN_TTL_SECONDS,
     }
 
